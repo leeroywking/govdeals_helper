@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: govdeals-postgres
+    environment:
+      POSTGRES_DB: govdeals
+      POSTGRES_USER: govdeals
+      POSTGRES_PASSWORD: govdeals
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U govdeals -d govdeals"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  query-api:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: govdeals-query-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GOVDEALS_DATABASE_URL: postgresql://govdeals:govdeals@postgres:5432/govdeals
+      GOVDEALS_CSV_PATH: /workspace/data/govdeals_listings.csv
+      GOVDEALS_META_PATH: /workspace/data/govdeals_listings.csv.meta.json
+      GOVDEALS_STATE_PATH: /workspace/data/govdeals_listings.csv.state.json
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+
+volumes:
+  postgres_data:
