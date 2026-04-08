@@ -22,6 +22,15 @@ const state = {
   model: localStorage.getItem(STORAGE_KEYS.model) || "gpt-5-mini",
   sessionApiKey: "",
   loadingEnrichmentIds: [],
+  batchRun: {
+    running: false,
+    scope: "",
+    total: 0,
+    completed: 0,
+    failed: 0,
+    currentTitle: "",
+    stopRequested: false,
+  },
 };
 
 const tabs = [
@@ -34,10 +43,14 @@ const cardsEl = document.getElementById("cards");
 const tabsEl = document.getElementById("tabs");
 const datasetStatusEl = document.getElementById("dataset-status");
 const listStatsEl = document.getElementById("list-stats");
+const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
 const reviewedFilterEl = document.getElementById("reviewed-filter");
 const pursuedFilterEl = document.getElementById("pursued-filter");
+const batchVisibleButtonEl = document.getElementById("batch-visible-button");
+const batchPursuedButtonEl = document.getElementById("batch-pursued-button");
+const batchStopButtonEl = document.getElementById("batch-stop-button");
 const exportButtonEl = document.getElementById("export-button");
 const settingsButtonEl = document.getElementById("settings-button");
 const detailDialogEl = document.getElementById("detail-dialog");
@@ -146,6 +159,14 @@ function isLoading(id) {
   return state.loadingEnrichmentIds.includes(id);
 }
 
+function batchStatusText() {
+  if (!state.batchRun.running) {
+    return "Batch enrichment can process many items, but only while the app remains open in the foreground.";
+  }
+  const current = state.batchRun.currentTitle ? ` | Current: ${state.batchRun.currentTitle}` : "";
+  return `Batch ${state.batchRun.scope}: ${state.batchRun.completed}/${state.batchRun.total} complete, ${state.batchRun.failed} failed${state.batchRun.stopRequested ? " | stopping after current item" : ""}${current}`;
+}
+
 async function loadManifest() {
   const response = await fetch("data/manifest.json");
   if (!response.ok) {
@@ -194,108 +215,6 @@ function formatHours(value) {
     return `${Math.max(0, Math.round(value))} h`;
   }
   return `${(value / 24).toFixed(1)} d`;
-}
-
-function getEnrichment(row) {
-  return state.enrichments[row.id] || null;
-}
-
-function effectiveScore(row) {
-  const enrichment = getEnrichment(row);
-  if (enrichment && typeof enrichment.updatedScore === "number") {
-    return enrichment.updatedScore;
-  }
-  if (enrichment && typeof enrichment.scoreAdjustment === "number" && typeof row.score === "number") {
-    return row.score + enrichment.scoreAdjustment;
-  }
-  return row.score;
-}
-
-function sortRows(rows) {
-  const sorted = [...rows];
-  sorted.sort((left, right) => {
-    if (state.sort === "endingSoon") {
-      return (left.hoursToEnd ?? 1e9) - (right.hoursToEnd ?? 1e9);
-    }
-    if (state.sort === "distance") {
-      return (left.distanceMiles ?? 1e9) - (right.distanceMiles ?? 1e9);
-    }
-    if (state.sort === "bid") {
-      return (right.currentBid ?? -1) - (left.currentBid ?? -1);
-    }
-    if (state.sort === "title") {
-      return (left.title || "").localeCompare(right.title || "");
-    }
-    if (state.sort === "enrichedScore") {
-      return (effectiveScore(right) ?? -1e9) - (effectiveScore(left) ?? -1e9);
-    }
-    return (right.score ?? -1e9) - (left.score ?? -1e9);
-  });
-  return sorted;
-}
-
-function filterRows(rows) {
-  const term = state.search.trim().toLowerCase();
-  return rows.filter((row) => {
-    if (state.reviewedOnly && !state.reviewedIds.includes(row.id)) {
-      return false;
-    }
-    if (state.pursuedOnly && !state.pursuedIds.includes(row.id)) {
-      return false;
-    }
-    if (!term) {
-      return true;
-    }
-    const enrichment = getEnrichment(row);
-    const haystack = [
-      row.title,
-      row.category,
-      row.state,
-      row.brand,
-      row.model,
-      row.company,
-      row.location,
-      row.longDescription,
-      enrichment?.summary,
-      enrichment?.listingSignals?.join(" "),
-      enrichment?.compSignals?.join(" "),
-      ...(row.flags || []),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(term);
-  });
-}
-
-function renderTabs() {
-  tabsEl.replaceChildren();
-  tabs.forEach((tab) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `tab-button${state.activeTab === tab.key ? " active" : ""}`;
-    const count = state.manifest?.counts?.[tab.key] ?? 0;
-    button.textContent = `${tab.label} (${count})`;
-    button.addEventListener("click", async () => {
-      state.activeTab = tab.key;
-      await render();
-    });
-    tabsEl.appendChild(button);
-  });
-}
-
-function metricPill(text) {
-  const el = document.createElement("span");
-  el.className = "pill";
-  el.textContent = text;
-  return el;
-}
-
-function reasonPill(text, kind) {
-  const el = document.createElement("span");
-  el.className = `pill ${kind}`;
-  el.textContent = text;
-  return el;
 }
 
 function escapeHtml(text) {
@@ -363,11 +282,7 @@ function collectStrings(node, values = []) {
     return values;
   }
   for (const [key, value] of Object.entries(node)) {
-    if (key === "text" && typeof value === "string") {
-      values.push(value);
-      continue;
-    }
-    if (key === "output_text" && typeof value === "string") {
+    if ((key === "text" || key === "output_text") && typeof value === "string") {
       values.push(value);
       continue;
     }
@@ -384,8 +299,131 @@ function extractResponseText(payload) {
   return strings.join("\n").trim();
 }
 
+function normalizeSource(source) {
+  if (!source) {
+    return null;
+  }
+  if (typeof source === "string") {
+    return { label: source, url: "" };
+  }
+  if (typeof source === "object") {
+    return {
+      label: String(source.label || source.name || source.url || "").trim(),
+      url: String(source.url || "").trim(),
+    };
+  }
+  return null;
+}
+
+function getEnrichment(row) {
+  return state.enrichments[row.id] || null;
+}
+
+function effectiveScore(row) {
+  const enrichment = getEnrichment(row);
+  if (enrichment && typeof enrichment.updatedScore === "number") {
+    return enrichment.updatedScore;
+  }
+  if (enrichment && typeof enrichment.scoreAdjustment === "number" && typeof row.score === "number") {
+    return row.score + enrichment.scoreAdjustment;
+  }
+  return row.score;
+}
+
+function sortRows(rows) {
+  const sorted = [...rows];
+  sorted.sort((left, right) => {
+    if (state.sort === "endingSoon") {
+      return (left.hoursToEnd ?? 1e9) - (right.hoursToEnd ?? 1e9);
+    }
+    if (state.sort === "distance") {
+      return (left.distanceMiles ?? 1e9) - (right.distanceMiles ?? 1e9);
+    }
+    if (state.sort === "bid") {
+      return (right.currentBid ?? -1) - (left.currentBid ?? -1);
+    }
+    if (state.sort === "title") {
+      return (left.title || "").localeCompare(right.title || "");
+    }
+    if (state.sort === "enrichedScore") {
+      return (effectiveScore(right) ?? -1e9) - (effectiveScore(left) ?? -1e9);
+    }
+    return (right.score ?? -1e9) - (left.score ?? -1e9);
+  });
+  return sorted;
+}
+
+function filterRows(rows) {
+  const term = state.search.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (state.reviewedOnly && !state.reviewedIds.includes(row.id)) {
+      return false;
+    }
+    if (state.pursuedOnly && !state.pursuedIds.includes(row.id)) {
+      return false;
+    }
+    if (!term) {
+      return true;
+    }
+    const enrichment = getEnrichment(row);
+    const haystack = [
+      row.title,
+      row.category,
+      row.state,
+      row.brand,
+      row.model,
+      row.company,
+      row.location,
+      row.longDescription,
+      enrichment?.summary,
+      enrichment?.listingSignals?.join(" "),
+      enrichment?.compSignals?.join(" "),
+      ...(enrichment?.possibleSources || []).map((source) => source.label || source.url).join(" "),
+      ...(row.flags || []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(term);
+  });
+}
+
+function currentFilteredRows() {
+  const rows = state.datasets[state.activeTab] || [];
+  return sortRows(filterRows(rows));
+}
+
+function renderTabs() {
+  tabsEl.replaceChildren();
+  tabs.forEach((tab) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `tab-button${state.activeTab === tab.key ? " active" : ""}`;
+    const count = state.manifest?.counts?.[tab.key] ?? 0;
+    button.textContent = `${tab.label} (${count})`;
+    button.addEventListener("click", async () => {
+      state.activeTab = tab.key;
+      await render();
+    });
+    tabsEl.appendChild(button);
+  });
+}
+
+function metricPill(text) {
+  const el = document.createElement("span");
+  el.className = "pill";
+  el.textContent = text;
+  return el;
+}
+
+function reasonPill(text, kind) {
+  const el = document.createElement("span");
+  el.className = `pill ${kind}`;
+  el.textContent = text;
+  return el;
+}
+
 function sanitizeEnrichment(raw, row) {
-  const currentBid = normalizeNumber(row.currentBid);
   const scoreAdjustment = normalizeNumber(raw.scoreAdjustment);
   const updatedScore = normalizeNumber(raw.updatedScore);
   const resaleLow = normalizeNumber(raw.estimatedResaleLow);
@@ -399,11 +437,13 @@ function sanitizeEnrichment(raw, row) {
     listingSignals: Array.isArray(raw.listingSignals) ? raw.listingSignals.map(String) : [],
     compSignals: Array.isArray(raw.compSignals) ? raw.compSignals.map(String) : [],
     riskSignals: Array.isArray(raw.riskSignals) ? raw.riskSignals.map(String) : [],
-    possibleSources: Array.isArray(raw.possibleSources) ? raw.possibleSources.map(String) : [],
+    possibleSources: Array.isArray(raw.possibleSources)
+      ? raw.possibleSources.map(normalizeSource).filter(Boolean)
+      : [],
     confidence: String(raw.confidence || "").trim(),
     recommendation: String(raw.recommendation || "").trim(),
     scoreAdjustment,
-    updatedScore: updatedScore ?? (typeof currentBid === "number" && typeof scoreAdjustment === "number" && typeof row.score === "number"
+    updatedScore: updatedScore ?? (typeof scoreAdjustment === "number" && typeof row.score === "number"
       ? row.score + scoreAdjustment
       : null),
     estimatedResaleLow: resaleLow,
@@ -423,7 +463,9 @@ Return strict JSON only with these keys:
 summary, listingSignals, compSignals, riskSignals, possibleSources, confidence, recommendation, scoreAdjustment, updatedScore, estimatedResaleLow, estimatedResaleHigh, estimatedProfitLow, estimatedProfitHigh, rawText
 
 Rules:
-- listingSignals, compSignals, riskSignals, possibleSources must be arrays of short strings
+- listingSignals, compSignals, riskSignals must be arrays of short strings
+- possibleSources must be an array of objects with keys label and url
+- include direct links to comparable sales or supporting pages whenever possible
 - scoreAdjustment should be between -30 and 30
 - updatedScore should be the revised total score for this item
 - estimate profit using current bid only, not taxes or transport fine-tuning
@@ -460,9 +502,14 @@ ${JSON.stringify(
 }
 
 async function runEnrichment(row) {
+  return runEnrichmentInternal(row, { rerenderAfter: true, showInlineError: true });
+}
+
+async function runEnrichmentInternal(row, options = {}) {
+  const { rerenderAfter = true, showInlineError = true } = options;
   if (!hasApiKey()) {
     openSettingsDialog("Enter an OpenAI API key before running Codex enrichment.");
-    return;
+    return false;
   }
 
   setLoading(row.id, true);
@@ -490,23 +537,106 @@ async function runEnrichment(row) {
     parsed.rawText = parsed.rawText || responseText;
     state.enrichments[row.id] = sanitizeEnrichment(parsed, row);
     saveObject(STORAGE_KEYS.enrichments, state.enrichments);
-    await render();
-
-    if (detailDialogEl.open) {
+    if (rerenderAfter) {
+      await render();
+    }
+    if (rerenderAfter && detailDialogEl.open) {
       renderDetail(row);
     }
+    return true;
   } catch (error) {
-    if (detailDialogEl.open) {
+    if (showInlineError && detailDialogEl.open) {
       const errorBlock = document.createElement("section");
       errorBlock.className = "detail-block";
       errorBlock.innerHTML = `<h3>Enrichment Error</h3><p>${escapeHtml(String(error))}</p>`;
       detailContentEl.prepend(errorBlock);
-    } else {
+    } else if (showInlineError) {
       datasetStatusEl.textContent = `Enrichment failed: ${String(error)}`;
     }
+    return false;
   } finally {
     setLoading(row.id, false);
   }
+}
+
+async function runBatchEnrichment(scope) {
+  if (state.batchRun.running) {
+    datasetStatusEl.textContent = "A batch enrichment run is already in progress.";
+    return;
+  }
+  if (!hasApiKey()) {
+    openSettingsDialog("Enter an OpenAI API key before running batch enrichment.");
+    return;
+  }
+
+  const sourceRows = scope === "pursued"
+    ? getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id))
+    : currentFilteredRows();
+  const rows = sortRows(sourceRows);
+  if (!rows.length) {
+    datasetStatusEl.textContent = scope === "pursued"
+      ? "No pursued items available for batch enrichment."
+      : "No filtered items available for batch enrichment.";
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Start batch enrichment for ${rows.length} ${scope === "pursued" ? "pursued" : "filtered"} items? This keeps running only while the app stays open in the foreground.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  state.batchRun = {
+    running: true,
+    scope,
+    total: rows.length,
+    completed: 0,
+    failed: 0,
+    currentTitle: "",
+    stopRequested: false,
+  };
+  await render();
+
+  for (const row of rows) {
+    if (state.batchRun.stopRequested) {
+      break;
+    }
+    state.batchRun.currentTitle = truncateText(row.title, 80);
+    await render();
+    const ok = await runEnrichmentInternal(row, { rerenderAfter: false, showInlineError: false });
+    state.batchRun.completed += 1;
+    if (!ok) {
+      state.batchRun.failed += 1;
+    }
+    await render();
+  }
+
+  const stopped = state.batchRun.stopRequested;
+  const completed = state.batchRun.completed;
+  const failed = state.batchRun.failed;
+  state.batchRun = {
+    running: false,
+    scope: "",
+    total: 0,
+    completed: 0,
+    failed: 0,
+    currentTitle: "",
+    stopRequested: false,
+  };
+  datasetStatusEl.textContent = stopped
+    ? `Batch enrichment stopped after ${completed} items with ${failed} failures.`
+    : `Batch enrichment finished: ${completed} items processed with ${failed} failures.`;
+  await render();
+}
+
+function requestBatchStop() {
+  if (!state.batchRun.running) {
+    datasetStatusEl.textContent = "No batch enrichment is running.";
+    return;
+  }
+  state.batchRun.stopRequested = true;
+  render();
 }
 
 function renderEnrichmentBlock(row) {
@@ -566,13 +696,36 @@ function renderEnrichmentBlock(row) {
   const list = document.createElement("ul");
   const items = [
     ...enrichment.listingSignals.map((value) => `Listing: ${value}`),
-    ...enrichment.possibleSources.map((value) => `Source: ${value}`),
   ];
   if (!items.length && enrichment.recommendation) {
     items.push(`Recommendation: ${enrichment.recommendation}`);
   }
   list.innerHTML = items.map((value) => `<li>${escapeHtml(value)}</li>`).join("") || "<li>No structured details returned.</li>";
   section.appendChild(list);
+
+  if (enrichment.possibleSources.length) {
+    const sourcesBlock = document.createElement("div");
+    sourcesBlock.className = "detail-block";
+    sourcesBlock.innerHTML = "<h3>Comp Links</h3>";
+    const sourceList = document.createElement("ul");
+    enrichment.possibleSources.forEach((source) => {
+      const item = document.createElement("li");
+      if (source.url) {
+        const link = document.createElement("a");
+        link.href = source.url;
+        link.textContent = source.label || source.url;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        item.appendChild(link);
+      } else {
+        item.textContent = source.label;
+      }
+      sourceList.appendChild(item);
+    });
+    sourcesBlock.appendChild(sourceList);
+    section.appendChild(sourcesBlock);
+  }
+
   return section;
 }
 
@@ -640,7 +793,6 @@ function renderDetail(row) {
   const actions = document.createElement("section");
   actions.className = "detail-block";
   actions.innerHTML = "<h3>Actions</h3>";
-
   const actionRow = document.createElement("div");
   actionRow.className = "inline-actions";
 
@@ -724,6 +876,9 @@ function renderCards(rows) {
       if (typeof enrichment.estimatedProfitHigh === "number") {
         metrics.appendChild(metricPill(`Profit ${formatCurrency(enrichment.estimatedProfitHigh)}`));
       }
+      if (enrichment.possibleSources.length) {
+        metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comps`));
+      }
     }
 
     (row.positiveReasons || []).slice(0, 2).forEach((reason) => {
@@ -760,7 +915,7 @@ function buildExportText() {
   const allRows = getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id));
   const sorted = sortRows(allRows);
   const lines = [];
-  lines.push(`GovDeals Helper Pursued Export`);
+  lines.push("GovDeals Helper Pursued Export");
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push(`Count: ${sorted.length}`);
   lines.push("");
@@ -777,7 +932,7 @@ function buildExportText() {
       lines.push(`Profit estimate: ${formatCurrency(enrichment.estimatedProfitLow)} to ${formatCurrency(enrichment.estimatedProfitHigh)}`);
       lines.push(`Comp signals: ${(enrichment.compSignals || []).join("; ") || "None"}`);
       lines.push(`Risk signals: ${(enrichment.riskSignals || []).join("; ") || "None"}`);
-      lines.push(`Sources: ${(enrichment.possibleSources || []).join("; ") || "None"}`);
+      lines.push(`Comp links: ${(enrichment.possibleSources || []).map((source) => `${source.label}${source.url ? ` (${source.url})` : ""}`).join("; ") || "None"}`);
     }
     lines.push(`Positive reasons: ${(row.positiveReasons || []).join("; ") || "None"}`);
     lines.push(`Negative reasons: ${(row.negativeReasons || []).join("; ") || "None"}`);
@@ -830,9 +985,7 @@ function saveSettings() {
   setApiKey(apiKey, remember);
   state.model = model;
   localStorage.setItem(STORAGE_KEYS.model, model);
-  settingsStatusEl.textContent = apiKey
-    ? `Saved. Using ${model}.`
-    : "No API key saved.";
+  settingsStatusEl.textContent = apiKey ? `Saved. Using ${model}.` : "No API key saved.";
   render();
 }
 
@@ -857,6 +1010,13 @@ async function render() {
   reviewedFilterEl.classList.toggle("active", state.reviewedOnly);
   pursuedFilterEl.textContent = state.pursuedOnly ? "Pursued Only" : "All Results";
   pursuedFilterEl.classList.toggle("active", state.pursuedOnly);
+  batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "filtered");
+  batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
+  batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
+  batchVisibleButtonEl.disabled = state.batchRun.running;
+  batchPursuedButtonEl.disabled = state.batchRun.running;
+  batchStopButtonEl.disabled = !state.batchRun.running;
+  batchStatusEl.textContent = batchStatusText();
 
   const rows = await loadDataset(state.activeTab);
   const filtered = sortRows(filterRows(rows));
@@ -890,6 +1050,9 @@ async function initialize() {
       state.pursuedOnly = !state.pursuedOnly;
       await render();
     });
+    batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("filtered"));
+    batchPursuedButtonEl.addEventListener("click", () => runBatchEnrichment("pursued"));
+    batchStopButtonEl.addEventListener("click", requestBatchStop);
     exportButtonEl.addEventListener("click", openExportDialog);
     settingsButtonEl.addEventListener("click", () => openSettingsDialog());
     saveSettingsButtonEl.addEventListener("click", saveSettings);

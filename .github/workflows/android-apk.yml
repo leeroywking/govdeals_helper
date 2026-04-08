@@ -55,7 +55,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: govdeals-helper-debug-apk
+          name: govdeals-helper-road-preview-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish preview release
@@ -64,7 +64,7 @@ jobs:
           allowUpdates: true
           artifactErrorsFailBuild: true
           artifacts: mobile/android/app/build/outputs/apk/debug/app-debug.apk
-          body: Latest Android preview build for GovDeals Helper.
+          body: Latest Android road-preview build for GovDeals Helper.
           prerelease: true
-          tag: android-preview
-          name: Android Preview
+          tag: android-road-preview
+          name: Android Road Preview

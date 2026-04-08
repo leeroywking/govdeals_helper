@@ -133,7 +133,8 @@ textarea {
 .pursue-toggle.pursued,
 .details-button,
 .link-button,
-.enrich-button.loading {
+.enrich-button.loading,
+.ghost-button.busy {
   background: var(--accent);
   color: #fff;
   border-color: transparent;
@@ -159,6 +160,10 @@ textarea {
 .status-panel,
 .supporting-text {
   color: var(--muted);
+}
+
+#batch-status {
+  min-height: 1.2em;
 }
 
 .status-panel {

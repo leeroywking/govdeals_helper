@@ -77,6 +77,7 @@ Current app features:
 - separate pursued/not-pursued state stored on-device
 - plain-text export of pursued items for transfer back to a computer
 - per-item Codex enrichment with local API-key configuration
+- batch enrichment for the current filtered set or the pursued set
 - search and sorting inside the app
 - item detail sheet with score reasons and flags
 
@@ -87,6 +88,8 @@ Codex enrichment notes:
 - the app prompts for an OpenAI API key locally on the device
 - the key can be session-only or remembered on that device
 - enrichment results are stored locally in the app and affect the displayed effective score
+- enrichment now attempts to include direct comp links when available
+- batch enrichment is foreground-only; it is not a guaranteed background Android worker yet
 - this is intentionally a local-use tradeoff; client-side API key use is less secure than a server-backed integration
 
 To refresh those files from the latest first-layer outputs:
@@ -103,7 +106,7 @@ Or:
 python3 -m app.mobile_bundle
 ```
 
-GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Preview`.
+GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Road Preview`.
 
 ## What The API Returns
 

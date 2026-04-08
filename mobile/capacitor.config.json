@@ -1,6 +1,6 @@
 {
-  "appId": "com.leeroywking.govdealshelper",
-  "appName": "GovDeals Helper",
+  "appId": "com.leeroywking.govdealshelperroadpreview",
+  "appName": "GovDeals Helper Road Preview",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
