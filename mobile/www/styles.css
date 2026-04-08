@@ -32,11 +32,15 @@ body {
 }
 
 .topbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .eyebrow {
@@ -48,10 +52,18 @@ body {
   text-transform: uppercase;
 }
 
-h1 {
+h1,
+h2 {
   margin: 0;
-  font-size: 1.8rem;
   line-height: 1.05;
+}
+
+h1 {
+  font-size: 1.8rem;
+}
+
+h2 {
+  font-size: 1.4rem;
 }
 
 .controls,
@@ -79,12 +91,14 @@ h1 {
 input,
 select,
 button,
+textarea,
 .link-button {
   font: inherit;
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   background: #fff;
@@ -92,12 +106,19 @@ select {
   padding: 12px 14px;
 }
 
+textarea {
+  resize: vertical;
+  min-height: 240px;
+}
+
 .ghost-button,
 .tab-button,
 .review-toggle,
+.pursue-toggle,
 .details-button,
 .link-button,
-.close-button {
+.close-button,
+.enrich-button {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff;
@@ -109,11 +130,17 @@ select {
 .ghost-button.active,
 .tab-button.active,
 .review-toggle.reviewed,
+.pursue-toggle.pursued,
 .details-button,
-.link-button {
+.link-button,
+.enrich-button.loading {
   background: var(--accent);
   color: #fff;
   border-color: transparent;
+}
+
+.pursue-toggle.pursued {
+  background: var(--accent-2);
 }
 
 .tabs {
@@ -129,8 +156,12 @@ select {
   white-space: nowrap;
 }
 
-.status-panel {
+.status-panel,
+.supporting-text {
   color: var(--muted);
+}
+
+.status-panel {
   display: grid;
   gap: 4px;
 }
@@ -151,6 +182,12 @@ select {
   gap: 12px;
 }
 
+.card-top-actions {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
 .category {
   margin: 0 0 6px;
   color: var(--accent);
@@ -167,7 +204,8 @@ select {
 }
 
 .metrics,
-.reasons {
+.reasons,
+.enrichment-reasons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -192,14 +230,19 @@ select {
   background: var(--danger-soft);
 }
 
-.actions {
+.actions,
+.inline-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.actions {
   margin-top: 16px;
 }
 
 .detail-dialog {
-  width: min(760px, calc(100vw - 24px));
+  width: min(920px, calc(100vw - 24px));
   border: none;
   padding: 0;
   background: transparent;
@@ -212,6 +255,16 @@ select {
 .detail-sheet {
   border-radius: 28px;
   padding: 18px;
+}
+
+.settings-sheet {
+  display: grid;
+  gap: 12px;
+}
+
+.dialog-header {
+  display: grid;
+  gap: 6px;
 }
 
 .detail-grid {
@@ -234,12 +287,33 @@ select {
 }
 
 .detail-block p,
-.detail-block ul {
+.detail-block ul,
+.detail-block pre {
   margin: 0;
 }
 
 .detail-block ul {
   padding-left: 18px;
+}
+
+.detail-block pre,
+.export-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.checkbox-field {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.checkbox-field input {
+  width: auto;
 }
 
 .empty-state {
@@ -251,9 +325,20 @@ select {
   color: var(--muted);
 }
 
+.enrichment-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.loading-note {
+  color: var(--accent);
+}
+
 @media (min-width: 720px) {
   .app-shell {
-    max-width: 920px;
+    max-width: 980px;
     margin: 0 auto;
     padding-top: 28px;
   }

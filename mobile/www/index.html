@@ -16,7 +16,12 @@
           <p class="eyebrow">GovDeals Helper</p>
           <h1>Android Review Build</h1>
         </div>
-        <button id="reviewed-filter" class="ghost-button" type="button">All Items</button>
+        <div class="topbar-actions">
+          <button id="pursued-filter" class="ghost-button" type="button">All Results</button>
+          <button id="reviewed-filter" class="ghost-button" type="button">All Review State</button>
+          <button id="export-button" class="ghost-button" type="button">Export Pursued</button>
+          <button id="settings-button" class="ghost-button" type="button">Codex Settings</button>
+        </div>
       </header>
 
       <section class="controls">
@@ -27,6 +32,7 @@
           <option value="distance">Sort: Distance</option>
           <option value="bid">Sort: Current Bid</option>
           <option value="title">Sort: Title</option>
+          <option value="enrichedScore">Sort: Enriched Score</option>
         </select>
       </section>
 
@@ -47,6 +53,53 @@
       </form>
     </dialog>
 
+    <dialog id="settings-dialog" class="detail-dialog">
+      <form method="dialog" class="detail-sheet settings-sheet">
+        <button class="close-button" value="cancel" type="submit">Close</button>
+        <div class="dialog-header">
+          <p class="eyebrow">Codex Settings</p>
+          <h2>OpenAI API Key</h2>
+          <p class="supporting-text">
+            This key is used directly from the app on your device. That is practical for local private use, but it is less secure than using a server.
+          </p>
+        </div>
+        <label class="field">
+          <span>API Key</span>
+          <input id="api-key-input" type="password" placeholder="sk-..." autocomplete="off" />
+        </label>
+        <label class="field checkbox-field">
+          <input id="remember-key-checkbox" type="checkbox" />
+          <span>Remember on this device</span>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input id="model-input" type="text" value="gpt-5-mini" />
+        </label>
+        <div class="inline-actions">
+          <button id="save-settings-button" class="details-button" type="button">Save Settings</button>
+          <button id="clear-settings-button" class="ghost-button" type="button">Clear Key</button>
+        </div>
+        <div id="settings-status" class="supporting-text"></div>
+      </form>
+    </dialog>
+
+    <dialog id="export-dialog" class="detail-dialog">
+      <form method="dialog" class="detail-sheet settings-sheet">
+        <button class="close-button" value="cancel" type="submit">Close</button>
+        <div class="dialog-header">
+          <p class="eyebrow">Export</p>
+          <h2>Pursued Items</h2>
+          <p class="supporting-text">Plain text export for moving the shortlist back to your computer.</p>
+        </div>
+        <textarea id="export-text" class="export-text" spellcheck="false"></textarea>
+        <div class="inline-actions">
+          <button id="copy-export-button" class="details-button" type="button">Copy Text</button>
+          <button id="download-export-button" class="ghost-button" type="button">Download .txt</button>
+        </div>
+        <div id="export-status" class="supporting-text"></div>
+      </form>
+    </dialog>
+
     <template id="card-template">
       <article class="card">
         <div class="card-top">
@@ -54,12 +107,16 @@
             <p class="category"></p>
             <h2 class="title"></h2>
           </div>
-          <button class="review-toggle" type="button"></button>
+          <div class="card-top-actions">
+            <button class="pursue-toggle" type="button"></button>
+            <button class="review-toggle" type="button"></button>
+          </div>
         </div>
         <div class="metrics"></div>
         <div class="reasons"></div>
         <div class="actions">
           <button class="details-button" type="button">Details</button>
+          <button class="enrich-button ghost-button" type="button">Enrich</button>
           <a class="link-button" target="_blank" rel="noreferrer">Open Listing</a>
         </div>
       </article>

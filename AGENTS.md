@@ -20,6 +20,12 @@ If a new reusable endpoint or analysis workflow is added, document:
 - what files it writes
 - important caveats or heuristic limitations
 
+If the Android app gains new local workflows, also document:
+
+- what state is persisted on-device
+- what exports the user can produce from the app
+- any security caveats for local API-key usage
+
 ## Current Important Endpoints
 
 The local query API currently exposes these important routes:

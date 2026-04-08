@@ -74,10 +74,20 @@ Current app features:
 - separate views for main candidates, consumer vehicles, and excluded items
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
+- separate pursued/not-pursued state stored on-device
+- plain-text export of pursued items for transfer back to a computer
+- per-item Codex enrichment with local API-key configuration
 - search and sorting inside the app
 - item detail sheet with score reasons and flags
 
 The app reads app-ready JSON files from `mobile/www/data/`.
+
+Codex enrichment notes:
+
+- the app prompts for an OpenAI API key locally on the device
+- the key can be session-only or remembered on that device
+- enrichment results are stored locally in the app and affect the displayed effective score
+- this is intentionally a local-use tradeoff; client-side API key use is less secure than a server-backed integration
 
 To refresh those files from the latest first-layer outputs:
 

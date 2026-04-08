@@ -52,6 +52,8 @@ Current implementation status:
 - app shell is implemented under `mobile/`
 - app-ready JSON bundle export is implemented
 - reviewed state is stored locally on-device via `localStorage`
+- pursued-state export is implemented as plain text download/copy
+- per-item Codex enrichment is implemented with local API-key settings and saved enrichment state
 - GitHub Actions is set up to build a debug APK and publish or update an `Android Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
