@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-04-08T15:50:44+00:00",
+  "sourceDirectory": "/home/ein/projects/govdeals/data/first_layer",
+  "counts": {
+    "mainCandidates": 17690,
+    "consumerVehicles": 6618,
+    "excludedItems": 420
+  },
+  "datasets": {
+    "mainCandidates": {
+      "path": "data/mainCandidates.json",
+      "count": 17690
+    },
+    "consumerVehicles": {
+      "path": "data/consumerVehicles.json",
+      "count": 6618
+    },
+    "excludedItems": {
+      "path": "data/excludedItems.json",
+      "count": 420
+    }
+  }
+}

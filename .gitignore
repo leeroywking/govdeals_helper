@@ -11,6 +11,7 @@ __pycache__/
 .venv/
 venv/
 env/
+node_modules/
 
 # Environment / secrets
 .env
@@ -37,3 +38,4 @@ data/first_layer/
 # Local scratch
 tmp/
 scratch/
+mobile/android/

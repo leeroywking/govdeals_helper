@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>GovDeals Helper</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">GovDeals Helper</p>
+          <h1>Android Review Build</h1>
+        </div>
+        <button id="reviewed-filter" class="ghost-button" type="button">All Items</button>
+      </header>
+
+      <section class="controls">
+        <input id="search-input" type="search" placeholder="Search title, category, state, brand..." />
+        <select id="sort-select">
+          <option value="score">Sort: Score</option>
+          <option value="endingSoon">Sort: Ending Soon</option>
+          <option value="distance">Sort: Distance</option>
+          <option value="bid">Sort: Current Bid</option>
+          <option value="title">Sort: Title</option>
+        </select>
+      </section>
+
+      <nav class="tabs" id="tabs"></nav>
+
+      <section class="status-panel">
+        <div id="dataset-status">Loading app bundle...</div>
+        <div id="list-stats"></div>
+      </section>
+
+      <main id="cards" class="cards"></main>
+    </div>
+
+    <dialog id="detail-dialog" class="detail-dialog">
+      <form method="dialog" class="detail-sheet">
+        <button class="close-button" value="cancel" type="submit">Close</button>
+        <div id="detail-content"></div>
+      </form>
+    </dialog>
+
+    <template id="card-template">
+      <article class="card">
+        <div class="card-top">
+          <div>
+            <p class="category"></p>
+            <h2 class="title"></h2>
+          </div>
+          <button class="review-toggle" type="button"></button>
+        </div>
+        <div class="metrics"></div>
+        <div class="reasons"></div>
+        <div class="actions">
+          <button class="details-button" type="button">Details</button>
+          <a class="link-button" target="_blank" rel="noreferrer">Open Listing</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

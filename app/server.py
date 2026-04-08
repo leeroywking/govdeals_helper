@@ -12,6 +12,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.first_layer import DEFAULT_OUTPUT_DIR, run_first_layer
+from app.mobile_bundle import DEFAULT_MOBILE_DATA_DIR, build_mobile_bundle
 
 
 DATABASE_URL = os.environ["GOVDEALS_DATABASE_URL"]
@@ -121,6 +122,17 @@ class FirstLayerRequest(BaseModel):
         description="Directory where first-layer output files should be written.",
     )
     top_n: int = Field(default=500, ge=1, le=5000)
+
+
+class MobileBundleRequest(BaseModel):
+    input_dir: str = Field(
+        default=str(DEFAULT_OUTPUT_DIR),
+        description="Directory containing first-layer CSV outputs.",
+    )
+    output_dir: str = Field(
+        default=str(DEFAULT_MOBILE_DATA_DIR),
+        description="Directory where app-ready mobile JSON files should be written.",
+    )
 
 
 def get_connection():
@@ -437,6 +449,35 @@ def first_layer_summary() -> dict[str, Any]:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if summary is None:
         raise HTTPException(status_code=404, detail="No first-layer run summary found.")
+    return {
+        "ok": True,
+        "summary": summary,
+    }
+
+
+@app.post("/analysis/export-mobile-bundle")
+def export_mobile_bundle(request: MobileBundleRequest) -> dict[str, Any]:
+    try:
+        result = build_mobile_bundle(
+            input_dir=Path(request.input_dir),
+            output_dir=Path(request.output_dir),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        "manifest": result.manifest,
+        "outputFiles": result.output_files,
+    }
+
+
+@app.get("/summary/mobile-bundle")
+def mobile_bundle_summary() -> dict[str, Any]:
+    manifest_path = DEFAULT_MOBILE_DATA_DIR / "manifest.json"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail="Mobile bundle manifest not found.")
+    summary = json.loads(manifest_path.read_text(encoding="utf-8"))
     return {
         "ok": True,
         "summary": summary,

@@ -135,6 +135,37 @@ Notes:
 - distance is computed from ZIP `98155` using listing latitude/longitude when present
 - vehicle and heavy-equipment classification is heuristic and regex-based
 
+## Mobile Bundle Export
+
+The app includes a dedicated endpoint to convert the latest first-layer CSV outputs into app-ready JSON for the Android client.
+
+Run it:
+
+```bash
+curl -s http://127.0.0.1:8000/analysis/export-mobile-bundle \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+This writes:
+
+- `/workspace/mobile/www/data/manifest.json`
+- `/workspace/mobile/www/data/mainCandidates.json`
+- `/workspace/mobile/www/data/consumerVehicles.json`
+- `/workspace/mobile/www/data/excludedItems.json`
+
+Read the latest bundle summary:
+
+```bash
+curl http://127.0.0.1:8000/summary/mobile-bundle
+```
+
+Notes:
+
+- the bundle is intentionally compact and only includes fields the Android client needs
+- reviewed/unreviewed state is not stored here; it stays local to the device
+- the Android client currently reads these JSON files directly from its bundled assets
+
 ## Run SQL
 
 The API accepts raw SQL over HTTP.
@@ -161,3 +192,4 @@ curl -s http://127.0.0.1:8000/query \
 - This is acceptable here because the service is intended to run only on the local machine.
 - The API truncates result sets to a configurable maximum per request to avoid dumping massive JSON responses.
 - The typed view is the main object to query unless you specifically want raw CSV strings.
+- the typed view is not safe for every `SELECT *` workflow because some raw values are dirty; the first-layer runner and mobile bundle exporter rely on raw first-layer outputs instead

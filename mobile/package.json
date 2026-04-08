@@ -1,0 +1,14 @@
+{
+  "name": "govdeals-helper-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-first Android review app for GovDeals Helper.",
+  "scripts": {
+    "sync:android": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  }
+}

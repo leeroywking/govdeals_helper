@@ -1,6 +1,25 @@
-# GovDeals Listing Exporter
+# GovDeals Helper
 
-This repo contains a Python CLI that pulls the current GovDeals search listings into CSV, writes a companion metadata JSON file describing the single API response shape, and keeps a checkpoint state file for retry and resume.
+This repo contains:
+
+- a Python CLI that pulls current GovDeals listings into CSV
+- a local-only Postgres-backed query API for ad hoc SQL and reusable summary endpoints
+- a first-layer, fully programmatic filtering pass that writes ranked candidate files for later human and agentic review
+- a local-first Android review app packaged from app-ready JSON data
+
+The intended workflow is:
+
+1. export the current GovDeals dataset
+2. load/query it locally through the query API
+3. run first-layer programmatic filtering
+4. do human review on the reduced candidate set
+5. do deeper agentic investigation only on survivors
+
+## Main Docs
+
+- [LOCAL_QUERY_APP.md](/home/ein/projects/govdeals/LOCAL_QUERY_APP.md): local Postgres/query server and analysis endpoints
+- [FIRST_LAYER_SCORING_SPEC.md](/home/ein/projects/govdeals/FIRST_LAYER_SCORING_SPEC.md): first-layer scoring rules and intent
+- [ANDROID_APP_ROADMAP.md](/home/ein/projects/govdeals/ANDROID_APP_ROADMAP.md): Android delivery plan and current milestone
 
 ## Usage
 
@@ -24,6 +43,57 @@ python3 fetch_govdeals_listings.py --metadata-output data/govdeals_meta.json
 python3 fetch_govdeals_listings.py --pause-seconds 2
 python3 fetch_govdeals_listings.py --resume
 ```
+
+## Local Query App
+
+After the dataset is present, the local query stack can be started with:
+
+```bash
+docker compose up --build
+```
+
+Important local endpoints:
+
+- `GET /health`
+- `GET /dataset`
+- `POST /query`
+- `GET /summary/market-breakdown`
+- `POST /analysis/run-first-layer`
+- `GET /summary/first-layer`
+- `POST /analysis/export-mobile-bundle`
+- `GET /summary/mobile-bundle`
+
+See [LOCAL_QUERY_APP.md](/home/ein/projects/govdeals/LOCAL_QUERY_APP.md) for example calls and output files.
+
+## Android App
+
+The repository now includes a simple local-first Android review client under `mobile/`.
+
+Current app features:
+
+- separate views for main candidates, consumer vehicles, and excluded items
+- direct GovDeals link-out per item
+- local reviewed/unreviewed state stored on-device
+- search and sorting inside the app
+- item detail sheet with score reasons and flags
+
+The app reads app-ready JSON files from `mobile/www/data/`.
+
+To refresh those files from the latest first-layer outputs:
+
+```bash
+curl -s http://127.0.0.1:8000/analysis/export-mobile-bundle \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+Or:
+
+```bash
+python3 -m app.mobile_bundle
+```
+
+GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Preview`.
 
 ## What The API Returns
 
@@ -98,3 +168,4 @@ This is intentionally safer than resuming from a saved page number because listi
 - Server-side sort parameters currently error from this endpoint, so the script sorts client-side after fetching.
 - Output columns include the raw listing fields plus derived helper columns for easier downstream filtering.
 - Category information is already present per listing via `assetCategory` and `categoryDescription`; the default top-level facet arrays are empty in the live anonymous response.
+- Environment secrets should go in `.env`; use `.env.example` as the template.
