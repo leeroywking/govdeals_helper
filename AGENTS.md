@@ -46,6 +46,18 @@ The local query API currently exposes these important routes:
 
 If any of these change, update docs immediately.
 
+## Execution Bias
+
+Keep working while there is work to do.
+
+Do not stop after a single small UI tweak, endpoint, or bugfix if there are still clear roadmap items or directly adjacent required work that can be completed safely in the same pass.
+
+Prefer larger autonomous chunks of progress:
+
+- finish coherent feature slices end-to-end
+- ship related UI, backend, and documentation changes together
+- only pause for user review when there is a real product-direction decision, blocker, or risk that cannot be resolved reasonably from local context
+
 ## Data Hygiene
 
 Keep `data/` reasonably clean.

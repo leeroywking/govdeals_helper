@@ -9,6 +9,17 @@ const STORAGE_KEYS = {
   rememberKey: "govdeals-openai-remember-key",
   model: "govdeals-openai-model",
   backendUrl: "govdeals-backend-url",
+  cachedBundleMarker: "govdeals-cached-bundle-marker",
+};
+
+const BUNDLE_DB_NAME = "govdeals-helper-bundle";
+const BUNDLE_DB_VERSION = 1;
+const BUNDLE_STORE = "bundle";
+const CACHE_KEYS = {
+  manifest: "manifest",
+  mainCandidates: "mainCandidates",
+  consumerVehicles: "consumerVehicles",
+  excludedItems: "excludedItems",
 };
 
 const BUCKETS = [
@@ -54,6 +65,8 @@ const state = {
   rememberKey: localStorage.getItem(STORAGE_KEYS.rememberKey) === "true",
   model: localStorage.getItem(STORAGE_KEYS.model) || "gpt-5-mini",
   backendUrl: localStorage.getItem(STORAGE_KEYS.backendUrl) || "",
+  statusMessage: "",
+  statusTone: "",
   sessionApiKey: "",
   loadingEnrichmentIds: [],
   batchRun: {
@@ -76,6 +89,11 @@ const listStatsEl = document.getElementById("list-stats");
 const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
+const selectVisibleButtonEl = document.getElementById("select-visible-button");
+const clearSelectedButtonEl = document.getElementById("clear-selected-button");
+const pursueSelectedButtonEl = document.getElementById("pursue-selected-button");
+const holdSelectedButtonEl = document.getElementById("hold-selected-button");
+const rejectSelectedButtonEl = document.getElementById("reject-selected-button");
 const batchSelectedButtonEl = document.getElementById("batch-selected-button");
 const batchVisibleButtonEl = document.getElementById("batch-visible-button");
 const batchPursuedButtonEl = document.getElementById("batch-pursued-button");
@@ -127,6 +145,89 @@ function saveArray(key, value) {
 
 function saveObject(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function setStatus(message, tone = "") {
+  state.statusMessage = String(message || "");
+  state.statusTone = tone;
+}
+
+function clearStatus() {
+  state.statusMessage = "";
+  state.statusTone = "";
+}
+
+function defaultStatusText() {
+  const base = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}`;
+  return hasBackend() ? `${base} | Backend ${getBackendUrl()}` : base;
+}
+
+function openBundleDb() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) {
+      reject(new Error("IndexedDB is not available in this environment."));
+      return;
+    }
+    const request = window.indexedDB.open(BUNDLE_DB_NAME, BUNDLE_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(BUNDLE_STORE)) {
+        db.createObjectStore(BUNDLE_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB open failed."));
+  });
+}
+
+async function writeCachedBundle(manifest, datasets) {
+  const db = await openBundleDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(BUNDLE_STORE, "readwrite");
+    const store = tx.objectStore(BUNDLE_STORE);
+    store.put(manifest, CACHE_KEYS.manifest);
+    store.put(datasets.mainCandidates || [], CACHE_KEYS.mainCandidates);
+    store.put(datasets.consumerVehicles || [], CACHE_KEYS.consumerVehicles);
+    store.put(datasets.excludedItems || [], CACHE_KEYS.excludedItems);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed."));
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted."));
+  });
+  db.close();
+  localStorage.setItem(STORAGE_KEYS.cachedBundleMarker, manifest.generatedAt || new Date().toISOString());
+}
+
+async function readCachedBundle() {
+  if (!localStorage.getItem(STORAGE_KEYS.cachedBundleMarker)) {
+    return null;
+  }
+  const db = await openBundleDb();
+  const payload = await new Promise((resolve, reject) => {
+    const tx = db.transaction(BUNDLE_STORE, "readonly");
+    const store = tx.objectStore(BUNDLE_STORE);
+    const requests = [
+      store.get(CACHE_KEYS.manifest),
+      store.get(CACHE_KEYS.mainCandidates),
+      store.get(CACHE_KEYS.consumerVehicles),
+      store.get(CACHE_KEYS.excludedItems),
+    ];
+    tx.oncomplete = () => resolve(requests.map((request) => request.result));
+    tx.onerror = () => reject(tx.error || new Error("IndexedDB read failed."));
+    tx.onabort = () => reject(tx.error || new Error("IndexedDB read aborted."));
+  });
+  db.close();
+  const [manifest, mainCandidates, consumerVehicles, excludedItems] = payload;
+  if (!manifest || !Array.isArray(mainCandidates) || !Array.isArray(consumerVehicles) || !Array.isArray(excludedItems)) {
+    return null;
+  }
+  return {
+    manifest,
+    datasets: {
+      mainCandidates,
+      consumerVehicles,
+      excludedItems,
+    },
+  };
 }
 
 function getApiKey() {
@@ -218,6 +319,43 @@ function toggleSelected(id) {
   render({ preserveScroll: true });
 }
 
+function selectVisibleRows() {
+  const visibleIds = filteredRowsForCurrentBucket().slice(0, 500).map((row) => row.id);
+  state.selectedIds = [...new Set([...state.selectedIds, ...visibleIds])];
+  setStatus(`Selected ${visibleIds.length} visible items.`, "positive");
+  render({ preserveScroll: true });
+}
+
+function clearSelectedRows() {
+  state.selectedIds = [];
+  setStatus("Cleared selected items.", "");
+  render({ preserveScroll: true });
+}
+
+function applySelectionState(mode) {
+  if (!state.selectedIds.length) {
+    setStatus("No selected items to update.", "negative");
+    render({ preserveScroll: true });
+    return;
+  }
+  const selected = [...state.selectedIds];
+  selected.forEach((id) => {
+    if (mode === "pursue") {
+      setPursued(id, false);
+    } else if (mode === "hold") {
+      setHolding(id, false);
+    } else if (mode === "reject") {
+      setRejected(id, false);
+    } else if (mode === "restore") {
+      restoreActive(id, false);
+    }
+  });
+  state.selectedIds = [];
+  const label = mode === "pursue" ? "pursued" : mode === "hold" ? "moved to holding" : mode === "reject" ? "rejected" : "restored";
+  setStatus(`${selected.length} selected items ${label}.`, "positive");
+  render({ preserveScroll: true });
+}
+
 function setReviewed(id, preserveScroll = true) {
   rememberRowSeen(id);
   if (isIn(id, state.reviewedIds)) {
@@ -274,12 +412,12 @@ function setRejected(id, preserveScroll = true) {
   render({ preserveScroll });
 }
 
-function restoreActive(id) {
+function restoreActive(id, preserveScroll = true) {
   clearTriageConflicts(id);
   saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
   saveArray(STORAGE_KEYS.holding, state.holdingIds);
   saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
-  render({ preserveScroll: true });
+  render({ preserveScroll });
 }
 
 function backendFetch(path, init = {}) {
@@ -317,6 +455,10 @@ async function loadManifest() {
     throw new Error(`Failed to load manifest: ${response.status}`);
   }
   state.manifest = await response.json();
+}
+
+function generatedAtValue(manifest) {
+  return Date.parse(manifest?.generatedAt || "") || 0;
 }
 
 function formatCurrency(value) {
@@ -711,10 +853,11 @@ async function runEnrichmentInternal(row, options = {}) {
     parsed.rawText = parsed.rawText || responseText;
     state.enrichments[row.id] = sanitizeEnrichment(parsed, row);
     saveObject(STORAGE_KEYS.enrichments, state.enrichments);
+    clearStatus();
     return true;
   } catch (error) {
     if (showError) {
-      datasetStatusEl.textContent = `Enrichment failed: ${String(error)}`;
+      setStatus(`Enrichment failed: ${String(error)}`, "negative");
     }
     return false;
   } finally {
@@ -727,7 +870,7 @@ async function runEnrichmentInternal(row, options = {}) {
 
 async function runBatchEnrichment(scope) {
   if (state.batchRun.running) {
-    datasetStatusEl.textContent = "A batch enrichment run is already in progress.";
+    setStatus("A batch enrichment run is already in progress.", "negative");
     return;
   }
   if (!hasApiKey()) {
@@ -743,7 +886,7 @@ async function runBatchEnrichment(scope) {
     rows = sortRows(filteredRowsForCurrentBucket());
   }
   if (!rows.length) {
-    datasetStatusEl.textContent = "No items available for batch enrichment.";
+    setStatus("No items available for batch enrichment.", "negative");
     return;
   }
   if (!window.confirm(`Start batch enrichment for ${rows.length} items? Keep the app open while it runs.`)) {
@@ -784,15 +927,18 @@ async function runBatchEnrichment(scope) {
     currentTitle: "",
     stopRequested: false,
   };
-  datasetStatusEl.textContent = stopped
-    ? `Batch enrichment stopped after ${finished} items with ${failed} failures.`
-    : `Batch enrichment finished: ${finished} items processed with ${failed} failures.`;
+  setStatus(
+    stopped
+      ? `Batch enrichment stopped after ${finished} items with ${failed} failures.`
+      : `Batch enrichment finished: ${finished} items processed with ${failed} failures.`,
+    failed ? "warning" : "positive",
+  );
   await render({ preserveScroll: true });
 }
 
 function requestBatchStop() {
   if (!state.batchRun.running) {
-    datasetStatusEl.textContent = "No batch enrichment is running.";
+    setStatus("No batch enrichment is running.", "negative");
     return;
   }
   state.batchRun.stopRequested = true;
@@ -1269,10 +1415,11 @@ async function refreshExpandedRow(row) {
       throw new Error(payload?.detail || `Listing refresh failed with ${response.status}`);
     }
     mergeListingSnapshot(row, payload.listing || {});
-    datasetStatusEl.textContent = `Updated ${truncateText(row.title, 72)} from the current local backend dataset.`;
+    setStatus(`Updated ${truncateText(row.title, 72)} from the current local backend dataset.`, "positive");
     render({ preserveScroll: true });
   } catch (error) {
-    datasetStatusEl.textContent = `Listing refresh failed: ${String(error)}`;
+    setStatus(`Listing refresh failed: ${String(error)}`, "negative");
+    render({ preserveScroll: true });
   }
 }
 
@@ -1284,7 +1431,8 @@ async function refreshAllListings() {
   if (!window.confirm("Run a full refresh? This will fetch current listings, rebuild first-layer outputs, rebuild the mobile bundle, merge it into the app, and mark newly appeared listings as new.")) {
     return;
   }
-  datasetStatusEl.textContent = "Refreshing listings from the backend pipeline...";
+  setStatus("Refreshing listings from the backend pipeline...", "warning");
+  render({ preserveScroll: true });
   try {
     const refreshResponse = await backendFetch("/analysis/refresh-all", {
       method: "POST",
@@ -1309,10 +1457,12 @@ async function refreshAllListings() {
       return payload;
     });
     mergeBundleDatasets(manifestPayload, datasets);
-    datasetStatusEl.textContent = `Full refresh complete. Bundle generated ${manifestPayload.generatedAt}. New items are tagged as new.`;
+    await writeCachedBundle(manifestPayload, datasets);
+    setStatus(`Full refresh complete. Bundle generated ${manifestPayload.generatedAt}. New items are tagged as new and the refreshed bundle is cached on-device.`, "positive");
     render({ preserveScroll: false });
   } catch (error) {
-    datasetStatusEl.textContent = `Full refresh failed: ${String(error)}`;
+    setStatus(`Full refresh failed: ${String(error)}`, "negative");
+    render({ preserveScroll: true });
   }
 }
 
@@ -1329,6 +1479,11 @@ async function render(options = {}) {
   batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "visible");
   batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
   batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
+  selectVisibleButtonEl.disabled = state.batchRun.running;
+  clearSelectedButtonEl.disabled = state.selectedIds.length === 0;
+  pursueSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
+  holdSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
+  rejectSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
   batchSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
   batchVisibleButtonEl.disabled = state.batchRun.running;
   batchPursuedButtonEl.disabled = state.batchRun.running;
@@ -1338,7 +1493,7 @@ async function render(options = {}) {
 
   const rows = sortRows(filteredRowsForCurrentBucket());
   listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
-  datasetStatusEl.textContent = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}${hasBackend() ? ` | Backend ${getBackendUrl()}` : ""}`;
+  datasetStatusEl.textContent = state.statusMessage || defaultStatusText();
   listStatsEl.textContent = `${rows.length} visible | Selected ${state.selectedIds.length} | New ${state.newIds.length} | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
   renderRows(rows);
 
@@ -1350,10 +1505,26 @@ async function render(options = {}) {
 async function initialize() {
   try {
     await loadManifest();
-    state.datasets = await loadBundleFromManifest(
-      state.manifest,
+    const packagedManifest = state.manifest;
+    const packagedDatasets = await loadBundleFromManifest(
+      packagedManifest,
       async (path) => fetch(path).then((response) => response.json()),
     );
+    let initialBundle = {
+      manifest: packagedManifest,
+      datasets: packagedDatasets,
+    };
+    try {
+      const cachedBundle = await readCachedBundle();
+      if (cachedBundle && generatedAtValue(cachedBundle.manifest) >= generatedAtValue(packagedManifest)) {
+        initialBundle = cachedBundle;
+        setStatus(`Loaded cached refreshed bundle from ${cachedBundle.manifest.generatedAt}.`, "positive");
+      }
+    } catch (error) {
+      setStatus(`Cached bundle unavailable: ${String(error)}`, "warning");
+    }
+    state.manifest = initialBundle.manifest;
+    state.datasets = initialBundle.datasets;
 
     searchInputEl.addEventListener("input", () => {
       state.search = searchInputEl.value;
@@ -1363,6 +1534,11 @@ async function initialize() {
       state.sort = sortSelectEl.value;
       render({ preserveScroll: true });
     });
+    selectVisibleButtonEl.addEventListener("click", selectVisibleRows);
+    clearSelectedButtonEl.addEventListener("click", clearSelectedRows);
+    pursueSelectedButtonEl.addEventListener("click", () => applySelectionState("pursue"));
+    holdSelectedButtonEl.addEventListener("click", () => applySelectionState("hold"));
+    rejectSelectedButtonEl.addEventListener("click", () => applySelectionState("reject"));
     batchSelectedButtonEl.addEventListener("click", () => runBatchEnrichment("selected"));
     batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("visible"));
     batchPursuedButtonEl.addEventListener("click", () => runBatchEnrichment("pursued"));
@@ -1381,7 +1557,8 @@ async function initialize() {
 
     await render();
   } catch (error) {
-    datasetStatusEl.textContent = "Failed to load app bundle.";
+    setStatus("Failed to load app bundle.", "negative");
+    datasetStatusEl.textContent = state.statusMessage || "Failed to load app bundle.";
     listStatsEl.textContent = String(error);
   }
 }

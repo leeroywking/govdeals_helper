@@ -106,6 +106,7 @@ Minimum batch affordances:
 
 - row-level selection for targeted multi-item work
 - `Enrich Selected`
+- selected-item `Pursue`, `Hold`, and `Reject`
 - `Enrich Visible`
 - `Enrich Pursued`
 - stop batch
@@ -154,9 +155,11 @@ This rework should deliver:
 - holding bucket and hold/unhold workflow
 - rejected bucket and restore flow
 - row-level selection for targeted enrichment
+- selected-item triage actions for pursue/hold/reject
 - inline expanding detail with enrichment and comp links
 - device-state export/import for moving triage state off the phone
 - optional backend-assisted full refresh and listing refresh
+- refreshed bundle caching so newer backend-refreshed data survives app restart
 - row-local state updates without snap-to-top behavior
 
 It does not need to deliver full refresh or native Android background services yet.

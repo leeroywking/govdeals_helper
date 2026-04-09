@@ -80,12 +80,14 @@ Current app features:
 - inline expanding detail sections inside each row
 - explicit row-level `Details` action plus chevron-style expand affordance
 - row-level selection for batch enrichment setup
+- row-level selection plus selected-item pursue/hold/reject actions
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device
 - separate holding/not-holding state stored on-device
 - rejected/restore workflow stored on-device
 - local `new` tagging after refreshed bundles are merged into the app
+- refreshed bundle caching on-device so backend-refreshed data survives app restarts
 - plain-text export of pursued items for transfer back to a computer
 - plain-text JSON export/import of local device state for transfer back to a computer or another device
 - per-item Codex enrichment with local API-key configuration
