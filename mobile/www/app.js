@@ -280,8 +280,33 @@ function getApiKey() {
   return state.rememberKey ? localStorage.getItem(STORAGE_KEYS.apiKey) || "" : state.sessionApiKey;
 }
 
+function capacitorPlatform() {
+  try {
+    return String(window.Capacitor?.getPlatform?.() || "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isAndroidRuntime() {
+  if (capacitorPlatform() === "android") {
+    return true;
+  }
+  try {
+    return /\bwv\b/i.test(navigator.userAgent || "") && /android/i.test(navigator.userAgent || "");
+  } catch {
+    return false;
+  }
+}
+
 function hasNativeRefresh() {
-  return Boolean(GovDealsRefresh && window.Capacitor?.isNativePlatform?.());
+  if (!GovDealsRefresh) {
+    return false;
+  }
+  if (typeof window.Capacitor?.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
+    return true;
+  }
+  return isAndroidRuntime();
 }
 
 function setApiKey(value, remember) {
@@ -1818,6 +1843,12 @@ async function refreshAllListings() {
       render({ preserveScroll: true });
       return;
     }
+  }
+
+  if (isAndroidRuntime()) {
+    setStatus("This Android build did not expose the native refresh bridge correctly. Full refresh should run on-device and should not require a backend URL on Android.", "negative");
+    render({ preserveScroll: true });
+    return;
   }
 
   if (!hasBackend()) {
