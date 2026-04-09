@@ -40,6 +40,9 @@ The local query API currently exposes these important routes:
 - `GET /summary/first-layer`
 - `POST /analysis/export-mobile-bundle`
 - `GET /summary/mobile-bundle`
+- `GET /bundle/mobile/{dataset_name}`
+- `GET /listing/{account_id}/{asset_id}`
+- `POST /analysis/refresh-all`
 
 If any of these change, update docs immediately.
 

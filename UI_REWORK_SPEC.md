@@ -104,6 +104,8 @@ Batch work should come from selection mode or bucket-level actions, not from rep
 
 Minimum batch affordances:
 
+- row-level selection for targeted multi-item work
+- `Enrich Selected`
 - `Enrich Visible`
 - `Enrich Pursued`
 - stop batch
@@ -148,9 +150,13 @@ This rework should deliver:
 - bucket-based primary navigation
 - dense triage rows
 - filter chips
+- local `new` flag visibility after refresh merges
 - holding bucket and hold/unhold workflow
 - rejected bucket and restore flow
+- row-level selection for targeted enrichment
 - inline expanding detail with enrichment and comp links
+- device-state export/import for moving triage state off the phone
+- optional backend-assisted full refresh and listing refresh
 - row-local state updates without snap-to-top behavior
 
 It does not need to deliver full refresh or native Android background services yet.

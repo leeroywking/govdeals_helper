@@ -3,10 +3,12 @@ const STORAGE_KEYS = {
   pursued: "govdeals-pursued-ids",
   holding: "govdeals-holding-ids",
   rejected: "govdeals-rejected-ids",
+  newIds: "govdeals-new-ids",
   enrichments: "govdeals-enrichments",
   apiKey: "govdeals-openai-api-key",
   rememberKey: "govdeals-openai-remember-key",
   model: "govdeals-openai-model",
+  backendUrl: "govdeals-backend-url",
 };
 
 const BUCKETS = [
@@ -19,6 +21,7 @@ const BUCKETS = [
 ];
 
 const CHIPS = [
+  { key: "newOnly", label: "New" },
   { key: "nearby", label: "Nearby" },
   { key: "endsSoon", label: "Ends Soon" },
   { key: "reviewed", label: "Reviewed" },
@@ -31,9 +34,11 @@ const state = {
   datasets: {},
   bucket: "active",
   expandedIds: [],
+  selectedIds: [],
   search: "",
   sort: "score",
   chips: {
+    newOnly: false,
     nearby: false,
     endsSoon: false,
     reviewed: false,
@@ -44,9 +49,11 @@ const state = {
   pursuedIds: loadArray(STORAGE_KEYS.pursued),
   holdingIds: loadArray(STORAGE_KEYS.holding),
   rejectedIds: loadArray(STORAGE_KEYS.rejected),
+  newIds: loadArray(STORAGE_KEYS.newIds),
   enrichments: loadObject(STORAGE_KEYS.enrichments),
   rememberKey: localStorage.getItem(STORAGE_KEYS.rememberKey) === "true",
   model: localStorage.getItem(STORAGE_KEYS.model) || "gpt-5-mini",
+  backendUrl: localStorage.getItem(STORAGE_KEYS.backendUrl) || "",
   sessionApiKey: "",
   loadingEnrichmentIds: [],
   batchRun: {
@@ -69,23 +76,33 @@ const listStatsEl = document.getElementById("list-stats");
 const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
+const batchSelectedButtonEl = document.getElementById("batch-selected-button");
 const batchVisibleButtonEl = document.getElementById("batch-visible-button");
 const batchPursuedButtonEl = document.getElementById("batch-pursued-button");
 const batchStopButtonEl = document.getElementById("batch-stop-button");
+const refreshButtonEl = document.getElementById("refresh-button");
+const stateTransferButtonEl = document.getElementById("state-transfer-button");
 const exportButtonEl = document.getElementById("export-button");
 const settingsButtonEl = document.getElementById("settings-button");
 const settingsDialogEl = document.getElementById("settings-dialog");
 const exportDialogEl = document.getElementById("export-dialog");
+const stateDialogEl = document.getElementById("state-dialog");
 const exportTextEl = document.getElementById("export-text");
 const exportStatusEl = document.getElementById("export-status");
+const stateTextEl = document.getElementById("state-text");
+const stateStatusEl = document.getElementById("state-status");
 const apiKeyInputEl = document.getElementById("api-key-input");
 const rememberKeyCheckboxEl = document.getElementById("remember-key-checkbox");
 const modelInputEl = document.getElementById("model-input");
+const backendUrlInputEl = document.getElementById("backend-url-input");
 const settingsStatusEl = document.getElementById("settings-status");
 const saveSettingsButtonEl = document.getElementById("save-settings-button");
 const clearSettingsButtonEl = document.getElementById("clear-settings-button");
 const copyExportButtonEl = document.getElementById("copy-export-button");
 const downloadExportButtonEl = document.getElementById("download-export-button");
+const copyStateButtonEl = document.getElementById("copy-state-button");
+const downloadStateButtonEl = document.getElementById("download-state-button");
+const importStateButtonEl = document.getElementById("import-state-button");
 const rowTemplate = document.getElementById("row-template");
 
 function loadArray(key) {
@@ -135,8 +152,16 @@ function clearApiKey() {
   localStorage.removeItem(STORAGE_KEYS.rememberKey);
 }
 
+function getBackendUrl() {
+  return String(state.backendUrl || "").trim().replace(/\/+$/, "");
+}
+
 function hasApiKey() {
   return Boolean(getApiKey());
+}
+
+function hasBackend() {
+  return Boolean(getBackendUrl());
 }
 
 function isIn(id, collection) {
@@ -154,6 +179,10 @@ function removeFrom(id, collection) {
 }
 
 function toggleExpanded(id, reveal = false) {
+  const willExpand = !state.expandedIds.includes(id);
+  if (willExpand) {
+    rememberRowSeen(id);
+  }
   if (state.expandedIds.includes(id)) {
     state.expandedIds = state.expandedIds.filter((entry) => entry !== id);
   } else {
@@ -165,9 +194,32 @@ function toggleExpanded(id, reveal = false) {
       document.querySelector(`[data-row-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }
+  if (willExpand) {
+    const row = findRowById(id);
+    if (row) {
+      refreshExpandedRow(row);
+    }
+  }
+}
+
+function rememberRowSeen(id) {
+  if (isIn(id, state.newIds)) {
+    state.newIds = removeFrom(id, state.newIds);
+    saveArray(STORAGE_KEYS.newIds, state.newIds);
+  }
+}
+
+function toggleSelected(id) {
+  if (isIn(id, state.selectedIds)) {
+    state.selectedIds = removeFrom(id, state.selectedIds);
+  } else {
+    state.selectedIds.push(id);
+  }
+  render({ preserveScroll: true });
 }
 
 function setReviewed(id, preserveScroll = true) {
+  rememberRowSeen(id);
   if (isIn(id, state.reviewedIds)) {
     state.reviewedIds = removeFrom(id, state.reviewedIds);
   } else {
@@ -186,6 +238,7 @@ function clearTriageConflicts(id) {
 function setPursued(id, preserveScroll = true) {
   const already = isIn(id, state.pursuedIds);
   clearTriageConflicts(id);
+  rememberRowSeen(id);
   if (!already) {
     addTo(id, state.pursuedIds);
   }
@@ -198,6 +251,7 @@ function setPursued(id, preserveScroll = true) {
 function setHolding(id, preserveScroll = true) {
   const already = isIn(id, state.holdingIds);
   clearTriageConflicts(id);
+  rememberRowSeen(id);
   if (!already) {
     addTo(id, state.holdingIds);
   }
@@ -210,6 +264,7 @@ function setHolding(id, preserveScroll = true) {
 function setRejected(id, preserveScroll = true) {
   const already = isIn(id, state.rejectedIds);
   clearTriageConflicts(id);
+  rememberRowSeen(id);
   if (!already) {
     addTo(id, state.rejectedIds);
   }
@@ -225,6 +280,14 @@ function restoreActive(id) {
   saveArray(STORAGE_KEYS.holding, state.holdingIds);
   saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
   render({ preserveScroll: true });
+}
+
+function backendFetch(path, init = {}) {
+  const base = getBackendUrl();
+  if (!base) {
+    throw new Error("Set a backend URL in Codex Settings first.");
+  }
+  return fetch(`${base}${path}`, init);
 }
 
 function setLoading(id, loading) {
@@ -432,6 +495,9 @@ function inBucket(row, bucket) {
 
 function rowMatchesChips(row) {
   const enrichment = getEnrichment(row);
+  if (state.chips.newOnly && !isIn(row.id, state.newIds)) {
+    return false;
+  }
   if (state.chips.nearby && !(typeof row.distanceMiles === "number" && row.distanceMiles <= 100)) {
     return false;
   }
@@ -517,7 +583,7 @@ function renderBuckets() {
       state.bucket = bucket.key;
       state.expandedIds = [];
       render({ preserveScroll: false });
-      window.scrollTo({ top: 0, behavior: "instant" });
+      window.scrollTo({ top: 0, behavior: "auto" });
     });
     bucketNavEl.appendChild(button);
   });
@@ -668,9 +734,14 @@ async function runBatchEnrichment(scope) {
     openSettingsDialog("Enter an OpenAI API key before running batch enrichment.");
     return;
   }
-  const rows = scope === "pursued"
-    ? sortRows(getAllRowsSync().filter((row) => isIn(row.id, state.pursuedIds) && !isIn(row.id, state.rejectedIds)))
-    : sortRows(filteredRowsForCurrentBucket());
+  let rows;
+  if (scope === "pursued") {
+    rows = sortRows(getAllRowsSync().filter((row) => isIn(row.id, state.pursuedIds) && !isIn(row.id, state.rejectedIds)));
+  } else if (scope === "selected") {
+    rows = sortRows(getAllRowsSync().filter((row) => isIn(row.id, state.selectedIds) && !isIn(row.id, state.rejectedIds)));
+  } else {
+    rows = sortRows(filteredRowsForCurrentBucket());
+  }
   if (!rows.length) {
     datasetStatusEl.textContent = "No items available for batch enrichment.";
     return;
@@ -750,6 +821,7 @@ function renderExpandedDetail(row) {
   overviewContent.appendChild(metricPill(`Ends ${formatHours(row.hoursToEnd)}`));
   overviewContent.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
   if (isIn(row.id, state.reviewedIds)) overviewContent.appendChild(metricPill("Reviewed", "positive"));
+  if (isIn(row.id, state.newIds)) overviewContent.appendChild(metricPill("New", "warning"));
   if (isIn(row.id, state.pursuedIds)) overviewContent.appendChild(metricPill("Pursued", "warning"));
   if (isIn(row.id, state.holdingIds)) overviewContent.appendChild(metricPill("Holding", "hold"));
   if (isIn(row.id, state.rejectedIds)) overviewContent.appendChild(metricPill("Rejected", "negative"));
@@ -806,6 +878,14 @@ function renderExpandedDetail(row) {
   linkButton.textContent = "Open Listing";
   linkButton.addEventListener("click", () => openListing(row.itemUrl));
   actionRow.appendChild(linkButton);
+
+  const refreshButton = document.createElement("button");
+  refreshButton.type = "button";
+  refreshButton.className = "ghost-button";
+  refreshButton.textContent = "Refresh Listing";
+  refreshButton.disabled = !hasBackend();
+  refreshButton.addEventListener("click", () => refreshExpandedRow(row));
+  actionRow.appendChild(refreshButton);
   wrapper.appendChild(detailSection("Actions", actionRow));
 
   const signals = document.createElement("div");
@@ -888,6 +968,7 @@ function renderRows(rows) {
     const title = fragment.querySelector(".row-title");
     const subtitle = fragment.querySelector(".row-subtitle");
     const metrics = fragment.querySelector(".row-metrics");
+    const selectButton = fragment.querySelector(".select-button");
     const detailsButton = fragment.querySelector(".details-button");
     const pursueButton = fragment.querySelector(".pursue-button");
     const holdButton = fragment.querySelector(".hold-button");
@@ -909,19 +990,23 @@ function renderRows(rows) {
     metrics.appendChild(metricPill(formatHours(row.hoursToEnd)));
     metrics.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
     if (isIn(row.id, state.reviewedIds)) metrics.appendChild(metricPill("Reviewed", "positive"));
+    if (isIn(row.id, state.newIds)) metrics.appendChild(metricPill("New", "warning"));
     if (isIn(row.id, state.pursuedIds)) metrics.appendChild(metricPill("Pursued", "warning"));
     if (isIn(row.id, state.holdingIds)) metrics.appendChild(metricPill("Holding", "hold"));
     if (isIn(row.id, state.rejectedIds)) metrics.appendChild(metricPill("Rejected", "negative"));
     if (enrichment?.possibleSources?.length) metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comp links`, "positive"));
 
     main.addEventListener("click", () => toggleExpanded(row.id, false));
+    selectButton.textContent = isIn(row.id, state.selectedIds) ? "Selected" : "Select";
+    selectButton.classList.add("select");
+    selectButton.classList.toggle("active", isIn(row.id, state.selectedIds));
+    selectButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSelected(row.id);
+    });
     detailsButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (!state.expandedIds.includes(row.id)) {
-        toggleExpanded(row.id, true);
-      } else {
-        toggleExpanded(row.id, true);
-      }
+      toggleExpanded(row.id, true);
     });
 
     pursueButton.textContent = isIn(row.id, state.pursuedIds) ? "Unpursue" : "Pursue";
@@ -1001,8 +1086,79 @@ function openSettingsDialog(message = "") {
   apiKeyInputEl.value = getApiKey();
   rememberKeyCheckboxEl.checked = state.rememberKey;
   modelInputEl.value = state.model;
+  backendUrlInputEl.value = state.backendUrl;
   settingsStatusEl.textContent = message || settingsSummaryText();
   settingsDialogEl.showModal();
+}
+
+function buildStateTransferPayload() {
+  return {
+    exportedAt: new Date().toISOString(),
+    reviewedIds: state.reviewedIds,
+    pursuedIds: state.pursuedIds,
+    holdingIds: state.holdingIds,
+    rejectedIds: state.rejectedIds,
+    newIds: state.newIds,
+    enrichments: state.enrichments,
+    model: state.model,
+    backendUrl: state.backendUrl,
+  };
+}
+
+function openStateDialog(message = "") {
+  stateTextEl.value = JSON.stringify(buildStateTransferPayload(), null, 2);
+  stateStatusEl.textContent = message || "Device state ready to copy, download, or import.";
+  stateDialogEl.showModal();
+}
+
+async function copyStateText() {
+  try {
+    await navigator.clipboard.writeText(stateTextEl.value);
+    stateStatusEl.textContent = "State JSON copied to clipboard.";
+  } catch {
+    stateStatusEl.textContent = "Clipboard copy failed on this device. Use Download instead.";
+  }
+}
+
+function downloadStateText() {
+  const blob = new Blob([stateTextEl.value], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `govdeals-device-state-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  stateStatusEl.textContent = "State JSON downloaded.";
+}
+
+function importStateText() {
+  try {
+    const parsed = JSON.parse(stateTextEl.value);
+    state.reviewedIds = Array.isArray(parsed.reviewedIds) ? parsed.reviewedIds.map(String) : [];
+    state.pursuedIds = Array.isArray(parsed.pursuedIds) ? parsed.pursuedIds.map(String) : [];
+    state.holdingIds = Array.isArray(parsed.holdingIds) ? parsed.holdingIds.map(String) : [];
+    state.rejectedIds = Array.isArray(parsed.rejectedIds) ? parsed.rejectedIds.map(String) : [];
+    state.newIds = Array.isArray(parsed.newIds) ? parsed.newIds.map(String) : [];
+    state.enrichments = parsed.enrichments && typeof parsed.enrichments === "object" ? parsed.enrichments : {};
+    if (typeof parsed.model === "string" && parsed.model.trim()) {
+      state.model = parsed.model.trim();
+      localStorage.setItem(STORAGE_KEYS.model, state.model);
+    }
+    if (typeof parsed.backendUrl === "string") {
+      state.backendUrl = parsed.backendUrl.trim();
+      localStorage.setItem(STORAGE_KEYS.backendUrl, state.backendUrl);
+    }
+    saveArray(STORAGE_KEYS.reviewed, state.reviewedIds);
+    saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+    saveArray(STORAGE_KEYS.holding, state.holdingIds);
+    saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+    saveArray(STORAGE_KEYS.newIds, state.newIds);
+    saveObject(STORAGE_KEYS.enrichments, state.enrichments);
+    stateStatusEl.textContent = "Imported state JSON.";
+    render({ preserveScroll: true });
+  } catch (error) {
+    stateStatusEl.textContent = `Import failed: ${String(error)}`;
+  }
 }
 
 async function copyExportText() {
@@ -1029,22 +1185,135 @@ function saveSettings() {
   const apiKey = apiKeyInputEl.value.trim();
   const remember = rememberKeyCheckboxEl.checked;
   const model = modelInputEl.value.trim() || "gpt-5-mini";
+  const backendUrl = backendUrlInputEl.value.trim().replace(/\/+$/, "");
   setApiKey(apiKey, remember);
   state.model = model;
+  state.backendUrl = backendUrl;
   localStorage.setItem(STORAGE_KEYS.model, model);
-  settingsStatusEl.textContent = apiKey ? `Saved. Using ${model}.` : "No API key saved.";
+  localStorage.setItem(STORAGE_KEYS.backendUrl, backendUrl);
+  settingsStatusEl.textContent = `Saved. ${apiKey ? `Using ${model}.` : "No API key saved."} ${backendUrl ? `Backend: ${backendUrl}` : "No backend URL set."}`;
   render({ preserveScroll: true });
 }
 
 function clearSettings() {
   clearApiKey();
   state.model = "gpt-5-mini";
+  state.backendUrl = "";
   localStorage.setItem(STORAGE_KEYS.model, state.model);
+  localStorage.removeItem(STORAGE_KEYS.backendUrl);
   apiKeyInputEl.value = "";
   rememberKeyCheckboxEl.checked = false;
   modelInputEl.value = state.model;
+  backendUrlInputEl.value = "";
   settingsStatusEl.textContent = "Cleared stored API key.";
   render({ preserveScroll: true });
+}
+
+async function loadBundleFromManifest(manifest, datasetFetcher) {
+  const datasetMeta = manifest.datasets;
+  const [mainCandidates, consumerVehicles, excludedItems] = await Promise.all([
+    datasetFetcher(datasetMeta.mainCandidates.path, "mainCandidates"),
+    datasetFetcher(datasetMeta.consumerVehicles.path, "consumerVehicles"),
+    datasetFetcher(datasetMeta.excludedItems.path, "excludedItems"),
+  ]);
+  return {
+    mainCandidates,
+    consumerVehicles,
+    excludedItems,
+  };
+}
+
+function mergeBundleDatasets(manifest, datasets) {
+  const previousIds = new Set(getAllRowsSync().map((row) => row.id));
+  state.manifest = manifest;
+  state.datasets = datasets;
+  const currentIds = new Set(getAllRowsSync().map((row) => row.id));
+  const justAppeared = [...currentIds].filter((id) => !previousIds.has(id));
+  state.newIds = [...new Set([...state.newIds.filter((id) => currentIds.has(id)), ...justAppeared])];
+  state.selectedIds = state.selectedIds.filter((id) => currentIds.has(id));
+  saveArray(STORAGE_KEYS.newIds, state.newIds);
+}
+
+function mergeListingSnapshot(row, listing) {
+  row.title = listing.assetShortDescription || row.title;
+  row.category = listing.categoryDisplay || listing.categoryDescription || row.category;
+  row.company = listing.companyName || row.company;
+  row.location = listing.locationDisplay || row.location;
+  row.state = listing.locationState || row.state;
+  row.zip = listing.locationZip || row.zip;
+  row.currentBid = normalizeNumber(listing.currentBid) ?? row.currentBid;
+  row.bidCount = normalizeNumber(listing.bidCount) ?? row.bidCount;
+  row.auctionEndUtc = listing.assetAuctionEndDateUtc || row.auctionEndUtc;
+  row.auctionEndDisplay = listing.assetAuctionEndDateDisplay || row.auctionEndDisplay;
+  row.timeRemaining = listing.timeRemaining || row.timeRemaining;
+  row.itemUrl = listing.itemUrl || row.itemUrl;
+  row.photoUrl = listing.photoUrl || row.photoUrl;
+  row.longDescription = listing.assetLongDescription || row.longDescription;
+  row.brand = listing.makebrand || row.brand;
+  row.model = listing.model || row.model;
+  row.modelYear = listing.modelYear || row.modelYear;
+}
+
+function findRowById(id) {
+  return getAllRowsSync().find((row) => row.id === id) || null;
+}
+
+async function refreshExpandedRow(row) {
+  if (!hasBackend()) {
+    return;
+  }
+  try {
+    const response = await backendFetch(`/listing/${encodeURIComponent(row.accountId)}/${encodeURIComponent(row.assetId)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.detail || `Listing refresh failed with ${response.status}`);
+    }
+    mergeListingSnapshot(row, payload.listing || {});
+    datasetStatusEl.textContent = `Updated ${truncateText(row.title, 72)} from the current local backend dataset.`;
+    render({ preserveScroll: true });
+  } catch (error) {
+    datasetStatusEl.textContent = `Listing refresh failed: ${String(error)}`;
+  }
+}
+
+async function refreshAllListings() {
+  if (!hasBackend()) {
+    openSettingsDialog("Set a backend URL before running a full refresh.");
+    return;
+  }
+  if (!window.confirm("Run a full refresh? This will fetch current listings, rebuild first-layer outputs, rebuild the mobile bundle, merge it into the app, and mark newly appeared listings as new.")) {
+    return;
+  }
+  datasetStatusEl.textContent = "Refreshing listings from the backend pipeline...";
+  try {
+    const refreshResponse = await backendFetch("/analysis/refresh-all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pause_seconds: 2, page_size: 100, top_n: 500, resume: false }),
+    });
+    const refreshPayload = await refreshResponse.json();
+    if (!refreshResponse.ok) {
+      throw new Error(refreshPayload?.detail || `Refresh failed with ${refreshResponse.status}`);
+    }
+    const manifestResponse = await backendFetch("/bundle/mobile/manifest");
+    const manifestPayload = await manifestResponse.json();
+    if (!manifestResponse.ok) {
+      throw new Error(manifestPayload?.detail || `Manifest fetch failed with ${manifestResponse.status}`);
+    }
+    const datasets = await loadBundleFromManifest(manifestPayload, async (_path, key) => {
+      const response = await backendFetch(`/bundle/mobile/${key}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || `Dataset fetch failed with ${response.status}`);
+      }
+      return payload;
+    });
+    mergeBundleDatasets(manifestPayload, datasets);
+    datasetStatusEl.textContent = `Full refresh complete. Bundle generated ${manifestPayload.generatedAt}. New items are tagged as new.`;
+    render({ preserveScroll: false });
+  } catch (error) {
+    datasetStatusEl.textContent = `Full refresh failed: ${String(error)}`;
+  }
 }
 
 async function render(options = {}) {
@@ -1056,37 +1325,35 @@ async function render(options = {}) {
   renderBuckets();
   renderChips();
 
+  batchSelectedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "selected");
   batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "visible");
   batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
   batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
+  batchSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
   batchVisibleButtonEl.disabled = state.batchRun.running;
   batchPursuedButtonEl.disabled = state.batchRun.running;
   batchStopButtonEl.disabled = !state.batchRun.running;
+  refreshButtonEl.disabled = state.batchRun.running;
   batchStatusEl.textContent = batchStatusText();
 
   const rows = sortRows(filteredRowsForCurrentBucket());
   listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
-  datasetStatusEl.textContent = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}`;
-  listStatsEl.textContent = `${rows.length} visible | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
+  datasetStatusEl.textContent = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}${hasBackend() ? ` | Backend ${getBackendUrl()}` : ""}`;
+  listStatsEl.textContent = `${rows.length} visible | Selected ${state.selectedIds.length} | New ${state.newIds.length} | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
   renderRows(rows);
 
   if (preserveScroll) {
-    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "instant" }));
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "auto" }));
   }
 }
 
 async function initialize() {
   try {
     await loadManifest();
-    const datasetMeta = state.manifest.datasets;
-    const [mainCandidates, consumerVehicles, excludedItems] = await Promise.all([
-      fetch(datasetMeta.mainCandidates.path).then((response) => response.json()),
-      fetch(datasetMeta.consumerVehicles.path).then((response) => response.json()),
-      fetch(datasetMeta.excludedItems.path).then((response) => response.json()),
-    ]);
-    state.datasets.mainCandidates = mainCandidates;
-    state.datasets.consumerVehicles = consumerVehicles;
-    state.datasets.excludedItems = excludedItems;
+    state.datasets = await loadBundleFromManifest(
+      state.manifest,
+      async (path) => fetch(path).then((response) => response.json()),
+    );
 
     searchInputEl.addEventListener("input", () => {
       state.search = searchInputEl.value;
@@ -1096,15 +1363,21 @@ async function initialize() {
       state.sort = sortSelectEl.value;
       render({ preserveScroll: true });
     });
+    batchSelectedButtonEl.addEventListener("click", () => runBatchEnrichment("selected"));
     batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("visible"));
     batchPursuedButtonEl.addEventListener("click", () => runBatchEnrichment("pursued"));
     batchStopButtonEl.addEventListener("click", requestBatchStop);
+    refreshButtonEl.addEventListener("click", refreshAllListings);
+    stateTransferButtonEl.addEventListener("click", () => openStateDialog());
     exportButtonEl.addEventListener("click", openExportDialog);
     settingsButtonEl.addEventListener("click", () => openSettingsDialog());
     saveSettingsButtonEl.addEventListener("click", saveSettings);
     clearSettingsButtonEl.addEventListener("click", clearSettings);
     copyExportButtonEl.addEventListener("click", copyExportText);
     downloadExportButtonEl.addEventListener("click", downloadExportText);
+    copyStateButtonEl.addEventListener("click", copyStateText);
+    downloadStateButtonEl.addEventListener("click", downloadStateText);
+    importStateButtonEl.addEventListener("click", importStateText);
 
     await render();
   } catch (error) {

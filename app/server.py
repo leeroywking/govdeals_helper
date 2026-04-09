@@ -1,18 +1,22 @@
 import csv
 import json
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.first_layer import DEFAULT_OUTPUT_DIR, run_first_layer
-from app.mobile_bundle import DEFAULT_MOBILE_DATA_DIR, build_mobile_bundle
+from app.mobile_bundle import DEFAULT_MOBILE_DATA_DIR, SOURCE_FILES, build_mobile_bundle
 
 
 DATABASE_URL = os.environ["GOVDEALS_DATABASE_URL"]
@@ -129,6 +133,13 @@ class MobileBundleRequest(BaseModel):
         default=str(DEFAULT_OUTPUT_DIR),
         description="Directory containing first-layer CSV outputs.",
     )
+
+
+class RefreshAllRequest(BaseModel):
+    pause_seconds: float = Field(default=2.0, ge=0.0, le=30.0)
+    page_size: int = Field(default=100, ge=10, le=200)
+    top_n: int = Field(default=500, ge=1, le=5000)
+    resume: bool = Field(default=False)
     output_dir: str = Field(
         default=str(DEFAULT_MOBILE_DATA_DIR),
         description="Directory where app-ready mobile JSON files should be written.",
@@ -323,7 +334,120 @@ def read_json_if_present(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def run_exporter_subprocess(pause_seconds: float, page_size: int, resume: bool) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[1]
+    cmd = [
+        sys.executable,
+        str(repo_root / "fetch_govdeals_listings.py"),
+        "--pause-seconds",
+        str(pause_seconds),
+        "--page-size",
+        str(page_size),
+    ]
+    if resume:
+        cmd.append("--resume")
+
+    completed = subprocess.run(
+        cmd,
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Exporter failed with exit code "
+            f"{completed.returncode}: {completed.stderr.strip() or completed.stdout.strip()}"
+        )
+    return {
+        "command": cmd,
+        "stdoutTail": "\n".join(completed.stdout.strip().splitlines()[-20:]),
+        "stderrTail": "\n".join(completed.stderr.strip().splitlines()[-20:]),
+    }
+
+
+def refresh_pipeline(
+    pause_seconds: float,
+    page_size: int,
+    top_n: int,
+    resume: bool,
+) -> dict[str, Any]:
+    exporter = run_exporter_subprocess(
+        pause_seconds=pause_seconds,
+        page_size=page_size,
+        resume=resume,
+    )
+    load_result = ensure_dataset_loaded()
+    APP_STATE["load_result"] = load_result
+    APP_STATE["metadata"] = read_json_if_present(META_PATH)
+    APP_STATE["state"] = read_json_if_present(STATE_PATH)
+
+    first_layer = run_first_layer(
+        database_url=DATABASE_URL,
+        output_dir=Path(DEFAULT_OUTPUT_DIR),
+        top_n=top_n,
+    )
+    APP_STATE["first_layer_summary"] = first_layer.summary
+
+    mobile_bundle = build_mobile_bundle(
+        input_dir=Path(DEFAULT_OUTPUT_DIR),
+        output_dir=Path(DEFAULT_MOBILE_DATA_DIR),
+    )
+    return {
+        "exporter": exporter,
+        "load": load_result,
+        "firstLayer": first_layer.summary,
+        "mobileBundle": mobile_bundle.manifest,
+        "outputFiles": {
+            **first_layer.output_files,
+            **mobile_bundle.output_files,
+        },
+    }
+
+
+def fetch_listing_snapshot(account_id: str, asset_id: str) -> dict[str, Any] | None:
+    query = sql.SQL(
+        """
+        SELECT
+            "assetId",
+            "accountId",
+            "assetShortDescription",
+            "categoryDisplay",
+            "categoryDescription",
+            "companyName",
+            "locationDisplay",
+            "locationState",
+            "locationZip",
+            "currentBid",
+            "bidCount",
+            "assetAuctionEndDateUtc",
+            "assetAuctionEndDateDisplay",
+            "timeRemaining",
+            "itemUrl",
+            "photoUrl",
+            "assetLongDescription",
+            "makebrand",
+            "model",
+            "modelYear"
+        FROM {typed_view}
+        WHERE "accountId" = %s AND "assetId" = %s
+        LIMIT 1
+        """
+    ).format(typed_view=quote_identifier(TYPED_VIEW))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (account_id, asset_id))
+            return cur.fetchone()
+
+
 app = FastAPI(title="GovDeals Local Query API", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 APP_STATE: dict[str, Any] = {}
 
 MARKET_BREAKDOWN_SQL = """
@@ -481,6 +605,48 @@ def mobile_bundle_summary() -> dict[str, Any]:
     return {
         "ok": True,
         "summary": summary,
+    }
+
+
+@app.get("/bundle/mobile/{dataset_name}")
+def mobile_bundle_dataset(dataset_name: str) -> JSONResponse:
+    valid = set(SOURCE_FILES) | {"manifest"}
+    if dataset_name not in valid:
+        raise HTTPException(status_code=404, detail=f"Unknown mobile bundle dataset: {dataset_name}")
+    path = DEFAULT_MOBILE_DATA_DIR / ("manifest.json" if dataset_name == "manifest" else f"{dataset_name}.json")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Bundle dataset not found: {path.name}")
+    return JSONResponse(content=json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.get("/listing/{account_id}/{asset_id}")
+def listing_snapshot(account_id: str, asset_id: str) -> dict[str, Any]:
+    row = fetch_listing_snapshot(account_id=account_id, asset_id=asset_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Listing not found in the currently loaded dataset.")
+    return {
+        "ok": True,
+        "listing": row,
+        "notes": [
+            "This snapshot comes from the currently loaded local dataset and will reflect the most recent successful full refresh, if one has been run.",
+        ],
+    }
+
+
+@app.post("/analysis/refresh-all")
+def analysis_refresh_all(request: RefreshAllRequest) -> dict[str, Any]:
+    try:
+        result = refresh_pipeline(
+            pause_seconds=request.pause_seconds,
+            page_size=request.page_size,
+            top_n=request.top_n,
+            resume=request.resume,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "result": result,
     }
 
 

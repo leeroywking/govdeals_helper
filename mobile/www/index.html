@@ -18,9 +18,12 @@
           <p class="subtitle">Inline triage queue for current candidates, holding, pursuit, rejection, vehicles, and Codex enrichment.</p>
         </div>
         <div class="topbar-actions">
+          <button id="batch-selected-button" class="ghost-button" type="button">Enrich Selected</button>
           <button id="batch-visible-button" class="ghost-button" type="button">Enrich Visible</button>
           <button id="batch-pursued-button" class="ghost-button" type="button">Enrich Pursued</button>
           <button id="batch-stop-button" class="ghost-button" type="button">Stop Batch</button>
+          <button id="refresh-button" class="ghost-button" type="button">Refresh Listings</button>
+          <button id="state-transfer-button" class="ghost-button" type="button">State Transfer</button>
           <button id="export-button" class="ghost-button" type="button">Export Pursued</button>
           <button id="settings-button" class="ghost-button" type="button">Codex Settings</button>
         </div>
@@ -80,6 +83,10 @@
           <span>Model</span>
           <input id="model-input" type="text" value="gpt-5-mini" />
         </label>
+        <label class="field">
+          <span>Backend URL</span>
+          <input id="backend-url-input" type="url" placeholder="http://192.168.1.10:8000" autocomplete="off" />
+        </label>
         <div class="inline-actions">
           <button id="save-settings-button" class="primary-button" type="button">Save Settings</button>
           <button id="clear-settings-button" class="ghost-button" type="button">Clear Key</button>
@@ -105,6 +112,24 @@
       </form>
     </dialog>
 
+    <dialog id="state-dialog" class="sheet-dialog">
+      <form method="dialog" class="sheet">
+        <button class="close-button" value="cancel" type="submit">Close</button>
+        <div class="dialog-header">
+          <p class="eyebrow">State Transfer</p>
+          <h2>Device Review State</h2>
+          <p class="supporting-text">Copy or download this plain-text JSON to move your reviewed, pursued, holding, rejected, and enrichment state back to a computer or another device. You can also paste it back in to restore state.</p>
+        </div>
+        <textarea id="state-text" class="export-text" spellcheck="false"></textarea>
+        <div class="inline-actions">
+          <button id="copy-state-button" class="primary-button" type="button">Copy JSON</button>
+          <button id="download-state-button" class="ghost-button" type="button">Download .json</button>
+          <button id="import-state-button" class="ghost-button" type="button">Import JSON</button>
+        </div>
+        <div id="state-status" class="supporting-text"></div>
+      </form>
+    </dialog>
+
     <template id="row-template">
       <article class="row-card">
         <button class="row-main" type="button">
@@ -118,6 +143,7 @@
           <div class="row-metrics"></div>
         </button>
         <div class="row-actions">
+          <button class="mini-button select-button" type="button">Select</button>
           <button class="mini-button details-button" type="button">Details</button>
           <button class="mini-button pursue-button" type="button"></button>
           <button class="mini-button hold-button" type="button"></button>

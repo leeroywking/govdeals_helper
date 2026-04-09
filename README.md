@@ -63,6 +63,9 @@ Important local endpoints:
 - `GET /summary/first-layer`
 - `POST /analysis/export-mobile-bundle`
 - `GET /summary/mobile-bundle`
+- `GET /bundle/mobile/{dataset_name}`
+- `GET /listing/{account_id}/{asset_id}`
+- `POST /analysis/refresh-all`
 
 See [LOCAL_QUERY_APP.md](/home/ein/projects/govdeals/LOCAL_QUERY_APP.md) for example calls and output files.
 
@@ -72,20 +75,24 @@ The repository now includes a simple local-first Android review client under `mo
 
 Current app features:
 
-- bucket-based triage views for active, pursued, rejected, vehicles, and excluded items
+- bucket-based triage views for active, pursued, holding, rejected, vehicles, and excluded items
 - dense inbox-style rows instead of large per-item cards
 - inline expanding detail sections inside each row
 - explicit row-level `Details` action plus chevron-style expand affordance
+- row-level selection for batch enrichment setup
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device
 - separate holding/not-holding state stored on-device
 - rejected/restore workflow stored on-device
+- local `new` tagging after refreshed bundles are merged into the app
 - plain-text export of pursued items for transfer back to a computer
+- plain-text JSON export/import of local device state for transfer back to a computer or another device
 - per-item Codex enrichment with local API-key configuration
-- batch enrichment for the current filtered set or the pursued set
+- batch enrichment for the current filtered set, selected set, or pursued set
 - search, sorting, and filter chips inside the app
 - expanded row detail with score reasons, enrichment notes, and comp links
+- optional local-backend URL setting for listing refresh and full refresh workflow
 
 The app reads app-ready JSON files from `mobile/www/data/`.
 
@@ -114,6 +121,14 @@ python3 -m app.mobile_bundle
 ```
 
 GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Road Preview`.
+
+If the app can reach the local query API over the network, it can also:
+
+- refresh the full dataset/filter/bundle pipeline through `POST /analysis/refresh-all`
+- fetch refreshed bundle datasets through `GET /bundle/mobile/{dataset_name}`
+- refresh an expanded listing against the current backend dataset through `GET /listing/{account_id}/{asset_id}`
+
+This backend-assisted refresh path is optional. The packaged app still works offline against its bundled JSON.
 
 ## What The API Returns
 

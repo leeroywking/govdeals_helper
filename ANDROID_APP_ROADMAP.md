@@ -55,10 +55,14 @@ Current implementation status:
 - app-ready JSON bundle export is implemented
 - reviewed state is stored locally on-device via `localStorage`
 - holding state is stored locally on-device via `localStorage`
+- new-item state is stored locally on-device via `localStorage`
 - pursued-state export is implemented as plain text download/copy
+- full local device-state export/import is implemented as plain-text JSON download/copy/paste
 - per-item Codex enrichment is implemented with local API-key settings and saved enrichment state
-- batch enrichment is implemented for filtered or pursued items while the app remains open
+- batch enrichment is implemented for filtered, selected, or pursued items while the app remains open
 - comp-link capture is implemented when enrichment can find source URLs
+- optional backend-assisted full refresh is implemented when a reachable local query API URL is configured in the app
+- optional expanded-row listing refresh is implemented against the current backend dataset when a reachable backend URL is configured
 - GitHub Actions is set up to build a debug APK and publish or update an `Android Road Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
@@ -67,6 +71,8 @@ Known limitation in the current preview:
 - batch enrichment is not a true Android background worker
 - it only keeps running while the app remains open in the foreground
 - button interactions currently trigger a rerender that can snap the list back to the top, which makes multi-item triage and batch setup unnecessarily annoying
+- batch enrichment is still foreground-only and not yet moved into a native Android service
+- backend-assisted refreshed bundles are merged in-memory during the current app session; they are not yet persisted as replacement app assets across app restarts
 
 Planned next-step architecture for that limitation:
 
@@ -111,6 +117,7 @@ Additional platform work to include in this phase:
 - reduce full-list rerenders for row-level actions so the user can move down the list without repeated scrolling
 - add a reversible remove/reject workflow so investigated items can leave the active list without being permanently lost
 - support a holding area or undo bucket so mistakenly rejected items can be restored easily
+- add richer selection-mode batch actions beyond enrichment, such as selected pursue/hold/reject
 
 ## Phase 3: Data Refresh Workflow
 
@@ -122,6 +129,7 @@ Add a repeatable refresh path:
 - rebuild APK
 - support item-level refresh from the detail view so opening `Details` can update the current bid, description, and other listing fields in place
 - support a full listing refresh that merges new source data into the existing app state instead of replacing local triage state
+- keep refreshed bundle data available across app restarts rather than only for the active session
 - preserve reviewed, pursued, rejected, and holding-area status across refreshes using stable item identity keys
 - tag newly appeared listings as `new` after a full refresh
 - allow filtering and sorting based on `new` status after refresh

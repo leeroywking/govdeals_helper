@@ -166,6 +166,54 @@ Notes:
 - reviewed/unreviewed state is not stored here; it stays local to the device
 - the Android client currently reads these JSON files directly from its bundled assets
 
+The API also exposes the generated bundle datasets directly for device refresh workflows:
+
+```bash
+curl http://127.0.0.1:8000/bundle/mobile/manifest
+curl http://127.0.0.1:8000/bundle/mobile/mainCandidates
+curl http://127.0.0.1:8000/bundle/mobile/consumerVehicles
+curl http://127.0.0.1:8000/bundle/mobile/excludedItems
+```
+
+## Listing Snapshot Endpoint
+
+The app can refresh an expanded item against the currently loaded backend dataset:
+
+```bash
+curl http://127.0.0.1:8000/listing/14934/123456
+```
+
+This returns the latest locally loaded listing fields for that `(accountId, assetId)` pair, including current bid, description, timing, and item URL.
+
+Important caveat:
+
+- this reflects the currently loaded local dataset, not a live per-item call to GovDeals
+- to make it reflect the latest crawl, run a full refresh first
+
+## Full Refresh Endpoint
+
+The app now includes a reusable endpoint for the full local refresh pipeline:
+
+```bash
+curl -s http://127.0.0.1:8000/analysis/refresh-all \
+  -H 'content-type: application/json' \
+  -d '{"pause_seconds":2,"page_size":100,"top_n":500,"resume":false}'
+```
+
+This pipeline:
+
+- reruns the GovDeals exporter
+- reloads Postgres from the refreshed CSV
+- reruns the first-layer filter
+- rebuilds the Android mobile bundle
+
+Important notes:
+
+- this is intentionally conservative and defaults to `pause_seconds = 2`
+- it is a long-running synchronous HTTP request
+- the Android app uses this only when a backend URL is configured and reachable
+- the backend enables permissive CORS so the locally installed app can call it across origins
+
 ## Run SQL
 
 The API accepts raw SQL over HTTP.
