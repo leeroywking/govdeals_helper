@@ -61,10 +61,12 @@ Current implementation status:
 - per-item Codex enrichment is implemented with local API-key settings and saved enrichment state
 - batch enrichment is implemented for filtered, selected, or pursued items while the app remains open
 - selected-item pursue/hold/reject actions are implemented
+- selected-item restore is implemented
 - comp-link capture is implemented when enrichment can find source URLs
 - optional backend-assisted full refresh is implemented when a reachable local query API URL is configured in the app
 - optional expanded-row listing refresh is implemented against the current backend dataset when a reachable backend URL is configured
 - backend-assisted refreshed bundles are cached on-device and restored on startup when newer than the packaged bundle
+- listings that disappear during a later full refresh are retained in a separate local `ended` bucket instead of silently vanishing
 - GitHub Actions is set up to build a debug APK and publish or update an `Android Road Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
@@ -132,9 +134,9 @@ Add a repeatable refresh path:
 - support a full listing refresh that merges new source data into the existing app state instead of replacing local triage state
 - preserve reviewed, pursued, rejected, and holding-area status across refreshes using stable item identity keys
 - tag newly appeared listings as `new` after a full refresh
+- distinguish removed / ended listings from manually rejected ones in the app
 - allow filtering and sorting based on `new` status after refresh
 - update in-place listings already under review or consideration when their bid, description, or related listing metadata changes
-- eventually surface removed / ended listings distinctly so the user can tell whether an item disappeared versus being manually rejected
 
 Eventually:
 

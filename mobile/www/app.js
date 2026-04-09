@@ -20,6 +20,7 @@ const CACHE_KEYS = {
   mainCandidates: "mainCandidates",
   consumerVehicles: "consumerVehicles",
   excludedItems: "excludedItems",
+  endedItems: "endedItems",
 };
 
 const BUCKETS = [
@@ -27,6 +28,7 @@ const BUCKETS = [
   { key: "pursued", label: "Pursued" },
   { key: "holding", label: "Holding" },
   { key: "rejected", label: "Rejected" },
+  { key: "ended", label: "Ended" },
   { key: "vehicles", label: "Vehicles" },
   { key: "excluded", label: "Excluded" },
 ];
@@ -94,6 +96,7 @@ const clearSelectedButtonEl = document.getElementById("clear-selected-button");
 const pursueSelectedButtonEl = document.getElementById("pursue-selected-button");
 const holdSelectedButtonEl = document.getElementById("hold-selected-button");
 const rejectSelectedButtonEl = document.getElementById("reject-selected-button");
+const restoreSelectedButtonEl = document.getElementById("restore-selected-button");
 const batchSelectedButtonEl = document.getElementById("batch-selected-button");
 const batchVisibleButtonEl = document.getElementById("batch-visible-button");
 const batchPursuedButtonEl = document.getElementById("batch-pursued-button");
@@ -189,6 +192,7 @@ async function writeCachedBundle(manifest, datasets) {
     store.put(datasets.mainCandidates || [], CACHE_KEYS.mainCandidates);
     store.put(datasets.consumerVehicles || [], CACHE_KEYS.consumerVehicles);
     store.put(datasets.excludedItems || [], CACHE_KEYS.excludedItems);
+    store.put(datasets.endedItems || [], CACHE_KEYS.endedItems);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed."));
     tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted."));
@@ -210,13 +214,14 @@ async function readCachedBundle() {
       store.get(CACHE_KEYS.mainCandidates),
       store.get(CACHE_KEYS.consumerVehicles),
       store.get(CACHE_KEYS.excludedItems),
+      store.get(CACHE_KEYS.endedItems),
     ];
     tx.oncomplete = () => resolve(requests.map((request) => request.result));
     tx.onerror = () => reject(tx.error || new Error("IndexedDB read failed."));
     tx.onabort = () => reject(tx.error || new Error("IndexedDB read aborted."));
   });
   db.close();
-  const [manifest, mainCandidates, consumerVehicles, excludedItems] = payload;
+  const [manifest, mainCandidates, consumerVehicles, excludedItems, endedItems] = payload;
   if (!manifest || !Array.isArray(mainCandidates) || !Array.isArray(consumerVehicles) || !Array.isArray(excludedItems)) {
     return null;
   }
@@ -226,6 +231,7 @@ async function readCachedBundle() {
       mainCandidates,
       consumerVehicles,
       excludedItems,
+      endedItems: Array.isArray(endedItems) ? endedItems : [],
     },
   };
 }
@@ -320,7 +326,10 @@ function toggleSelected(id) {
 }
 
 function selectVisibleRows() {
-  const visibleIds = filteredRowsForCurrentBucket().slice(0, 500).map((row) => row.id);
+  const visibleIds = filteredRowsForCurrentBucket()
+    .slice(0, 500)
+    .filter((row) => row.bucket !== "ended")
+    .map((row) => row.id);
   state.selectedIds = [...new Set([...state.selectedIds, ...visibleIds])];
   setStatus(`Selected ${visibleIds.length} visible items.`, "positive");
   render({ preserveScroll: true });
@@ -354,6 +363,13 @@ function applySelectionState(mode) {
   const label = mode === "pursue" ? "pursued" : mode === "hold" ? "moved to holding" : mode === "reject" ? "rejected" : "restored";
   setStatus(`${selected.length} selected items ${label}.`, "positive");
   render({ preserveScroll: true });
+}
+
+function selectableRowsCount() {
+  return filteredRowsForCurrentBucket()
+    .slice(0, 500)
+    .filter((row) => row.bucket !== "ended")
+    .length;
 }
 
 function setReviewed(id, preserveScroll = true) {
@@ -459,6 +475,10 @@ async function loadManifest() {
 
 function generatedAtValue(manifest) {
   return Date.parse(manifest?.generatedAt || "") || 0;
+}
+
+function endedAtValue(row) {
+  return Date.parse(row?.endedAt || "") || 0;
 }
 
 function formatCurrency(value) {
@@ -585,6 +605,7 @@ function getAllRowsSync() {
     ...(state.datasets.mainCandidates || []),
     ...(state.datasets.consumerVehicles || []),
     ...(state.datasets.excludedItems || []),
+    ...(state.datasets.endedItems || []),
   ];
 }
 
@@ -607,6 +628,9 @@ function sourceRowsForBucket(bucket) {
   if (bucket === "vehicles") {
     return state.datasets.consumerVehicles || [];
   }
+  if (bucket === "ended") {
+    return state.datasets.endedItems || [];
+  }
   if (bucket === "excluded") {
     return state.datasets.excludedItems || [];
   }
@@ -625,6 +649,9 @@ function inBucket(row, bucket) {
   }
   if (bucket === "rejected") {
     return isIn(row.id, state.rejectedIds);
+  }
+  if (bucket === "ended") {
+    return true;
   }
   if (bucket === "vehicles") {
     return !isIn(row.id, state.rejectedIds);
@@ -701,6 +728,9 @@ function sortRows(rows) {
     }
     if (state.sort === "bid") {
       return (right.currentBid ?? -1) - (left.currentBid ?? -1);
+    }
+    if (state.sort === "ended") {
+      return endedAtValue(right) - endedAtValue(left);
     }
     if (state.sort === "title") {
       return (left.title || "").localeCompare(right.title || "");
@@ -1094,6 +1124,16 @@ function renderExpandedDetail(row) {
     }
   }
   wrapper.appendChild(detailSection("Codex Enrichment", enrichContent));
+
+  if (row.bucket === "ended") {
+    const endedContent = document.createElement("div");
+    endedContent.className = "detail-pills";
+    endedContent.appendChild(metricPill(`Ended ${row.endedAt ? new Date(row.endedAt).toLocaleString() : "Unknown"}`, "negative"));
+    if (row.endedReason) {
+      endedContent.appendChild(metricPill(row.endedReason, "negative"));
+    }
+    wrapper.appendChild(detailSection("Ended Status", endedContent));
+  }
   return wrapper;
 }
 
@@ -1137,6 +1177,7 @@ function renderRows(rows) {
     metrics.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
     if (isIn(row.id, state.reviewedIds)) metrics.appendChild(metricPill("Reviewed", "positive"));
     if (isIn(row.id, state.newIds)) metrics.appendChild(metricPill("New", "warning"));
+    if (row.bucket === "ended") metrics.appendChild(metricPill("Ended", "negative"));
     if (isIn(row.id, state.pursuedIds)) metrics.appendChild(metricPill("Pursued", "warning"));
     if (isIn(row.id, state.holdingIds)) metrics.appendChild(metricPill("Holding", "hold"));
     if (isIn(row.id, state.rejectedIds)) metrics.appendChild(metricPill("Rejected", "negative"));
@@ -1366,18 +1407,64 @@ async function loadBundleFromManifest(manifest, datasetFetcher) {
     mainCandidates,
     consumerVehicles,
     excludedItems,
+    endedItems: [],
   };
 }
 
+function buildEndedItems(previousDatasets, nextDatasets) {
+  const previousLiveRows = [
+    ...(previousDatasets.mainCandidates || []),
+    ...(previousDatasets.consumerVehicles || []),
+    ...(previousDatasets.endedItems || []),
+  ];
+  const nextIds = new Set([
+    ...(nextDatasets.mainCandidates || []).map((row) => row.id),
+    ...(nextDatasets.consumerVehicles || []).map((row) => row.id),
+  ]);
+  const seen = new Set();
+  const ended = [];
+  previousLiveRows.forEach((row) => {
+    if (!row?.id || seen.has(row.id) || nextIds.has(row.id)) {
+      return;
+    }
+    seen.add(row.id);
+    ended.push({
+      ...row,
+      bucket: "ended",
+      endedAt: row.endedAt || new Date().toISOString(),
+      endedReason: row.endedReason || "Missing from the latest refreshed bundle.",
+    });
+  });
+  return ended.sort((left, right) => endedAtValue(right) - endedAtValue(left));
+}
+
 function mergeBundleDatasets(manifest, datasets) {
-  const previousIds = new Set(getAllRowsSync().map((row) => row.id));
+  const previousDatasets = {
+    mainCandidates: state.datasets.mainCandidates || [],
+    consumerVehicles: state.datasets.consumerVehicles || [],
+    excludedItems: state.datasets.excludedItems || [],
+    endedItems: state.datasets.endedItems || [],
+  };
+  const previousIds = new Set([
+    ...previousDatasets.mainCandidates.map((row) => row.id),
+    ...previousDatasets.consumerVehicles.map((row) => row.id),
+  ]);
+  const mergedDatasets = {
+    ...datasets,
+    endedItems: buildEndedItems(previousDatasets, datasets),
+  };
   state.manifest = manifest;
-  state.datasets = datasets;
-  const currentIds = new Set(getAllRowsSync().map((row) => row.id));
+  state.datasets = mergedDatasets;
+  const currentIds = new Set([
+    ...(mergedDatasets.mainCandidates || []).map((row) => row.id),
+    ...(mergedDatasets.consumerVehicles || []).map((row) => row.id),
+    ...(mergedDatasets.endedItems || []).map((row) => row.id),
+  ]);
   const justAppeared = [...currentIds].filter((id) => !previousIds.has(id));
   state.newIds = [...new Set([...state.newIds.filter((id) => currentIds.has(id)), ...justAppeared])];
   state.selectedIds = state.selectedIds.filter((id) => currentIds.has(id));
   saveArray(STORAGE_KEYS.newIds, state.newIds);
+  return mergedDatasets;
 }
 
 function mergeListingSnapshot(row, listing) {
@@ -1412,6 +1499,11 @@ async function refreshExpandedRow(row) {
     const response = await backendFetch(`/listing/${encodeURIComponent(row.accountId)}/${encodeURIComponent(row.assetId)}`);
     const payload = await response.json();
     if (!response.ok) {
+      if (response.status === 404 && row.bucket === "ended") {
+        setStatus(`Listing ${truncateText(row.title, 72)} is still absent from the current backend dataset.`, "warning");
+        render({ preserveScroll: true });
+        return;
+      }
       throw new Error(payload?.detail || `Listing refresh failed with ${response.status}`);
     }
     mergeListingSnapshot(row, payload.listing || {});
@@ -1456,8 +1548,8 @@ async function refreshAllListings() {
       }
       return payload;
     });
-    mergeBundleDatasets(manifestPayload, datasets);
-    await writeCachedBundle(manifestPayload, datasets);
+    const mergedDatasets = mergeBundleDatasets(manifestPayload, datasets);
+    await writeCachedBundle(manifestPayload, mergedDatasets);
     setStatus(`Full refresh complete. Bundle generated ${manifestPayload.generatedAt}. New items are tagged as new and the refreshed bundle is cached on-device.`, "positive");
     render({ preserveScroll: false });
   } catch (error) {
@@ -1479,12 +1571,15 @@ async function render(options = {}) {
   batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "visible");
   batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
   batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
+  const hasSelected = state.selectedIds.length > 0;
+  const canMutateSelection = hasSelected && state.bucket !== "ended";
   selectVisibleButtonEl.disabled = state.batchRun.running;
-  clearSelectedButtonEl.disabled = state.selectedIds.length === 0;
-  pursueSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
-  holdSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
-  rejectSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
-  batchSelectedButtonEl.disabled = state.batchRun.running || state.selectedIds.length === 0;
+  clearSelectedButtonEl.disabled = !hasSelected;
+  pursueSelectedButtonEl.disabled = state.batchRun.running || !canMutateSelection;
+  holdSelectedButtonEl.disabled = state.batchRun.running || !canMutateSelection;
+  rejectSelectedButtonEl.disabled = state.batchRun.running || !canMutateSelection;
+  restoreSelectedButtonEl.disabled = state.batchRun.running || !hasSelected;
+  batchSelectedButtonEl.disabled = state.batchRun.running || !canMutateSelection;
   batchVisibleButtonEl.disabled = state.batchRun.running;
   batchPursuedButtonEl.disabled = state.batchRun.running;
   batchStopButtonEl.disabled = !state.batchRun.running;
@@ -1494,7 +1589,7 @@ async function render(options = {}) {
   const rows = sortRows(filteredRowsForCurrentBucket());
   listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
   datasetStatusEl.textContent = state.statusMessage || defaultStatusText();
-  listStatsEl.textContent = `${rows.length} visible | Selected ${state.selectedIds.length} | New ${state.newIds.length} | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
+  listStatsEl.textContent = `${rows.length} visible | Selectable ${selectableRowsCount()} | Selected ${state.selectedIds.length} | New ${state.newIds.length} | Ended ${(state.datasets.endedItems || []).length} | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
   renderRows(rows);
 
   if (preserveScroll) {
@@ -1539,6 +1634,7 @@ async function initialize() {
     pursueSelectedButtonEl.addEventListener("click", () => applySelectionState("pursue"));
     holdSelectedButtonEl.addEventListener("click", () => applySelectionState("hold"));
     rejectSelectedButtonEl.addEventListener("click", () => applySelectionState("reject"));
+    restoreSelectedButtonEl.addEventListener("click", () => applySelectionState("restore"));
     batchSelectedButtonEl.addEventListener("click", () => runBatchEnrichment("selected"));
     batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("visible"));
     batchPursuedButtonEl.addEventListener("click", () => runBatchEnrichment("pursued"));

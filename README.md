@@ -75,18 +75,19 @@ The repository now includes a simple local-first Android review client under `mo
 
 Current app features:
 
-- bucket-based triage views for active, pursued, holding, rejected, vehicles, and excluded items
+- bucket-based triage views for active, pursued, holding, rejected, ended, vehicles, and excluded items
 - dense inbox-style rows instead of large per-item cards
 - inline expanding detail sections inside each row
 - explicit row-level `Details` action plus chevron-style expand affordance
 - row-level selection for batch enrichment setup
-- row-level selection plus selected-item pursue/hold/reject actions
+- row-level selection plus selected-item pursue/hold/reject/restore actions
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device
 - separate holding/not-holding state stored on-device
 - rejected/restore workflow stored on-device
 - local `new` tagging after refreshed bundles are merged into the app
+- separate `ended` bucket for listings that disappear during a later full refresh
 - refreshed bundle caching on-device so backend-refreshed data survives app restarts
 - plain-text export of pursued items for transfer back to a computer
 - plain-text JSON export/import of local device state for transfer back to a computer or another device

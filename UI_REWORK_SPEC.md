@@ -89,6 +89,7 @@ Minimum states:
 - `pursued`
 - `holding`
 - `rejected`
+- `ended`
 
 Supporting flags:
 
@@ -156,10 +157,12 @@ This rework should deliver:
 - rejected bucket and restore flow
 - row-level selection for targeted enrichment
 - selected-item triage actions for pursue/hold/reject
+- selected-item restore action
 - inline expanding detail with enrichment and comp links
 - device-state export/import for moving triage state off the phone
 - optional backend-assisted full refresh and listing refresh
 - refreshed bundle caching so newer backend-refreshed data survives app restart
+- ended-list retention so disappeared listings stay reviewable after refresh
 - row-local state updates without snap-to-top behavior
 
 It does not need to deliver full refresh or native Android background services yet.
