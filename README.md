@@ -90,6 +90,7 @@ Codex enrichment notes:
 - enrichment results are stored locally in the app and affect the displayed effective score
 - enrichment now attempts to include direct comp links when available
 - batch enrichment is foreground-only; it is not a guaranteed background Android worker yet
+- planned next step for this is a native Android foreground-service implementation started from user action
 - this is intentionally a local-use tradeoff; client-side API key use is less secure than a server-backed integration
 
 To refresh those files from the latest first-layer outputs:

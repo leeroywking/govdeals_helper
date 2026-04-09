@@ -25,6 +25,7 @@ If the Android app gains new local workflows, also document:
 - what state is persisted on-device
 - what exports the user can produce from the app
 - any security caveats for local API-key usage
+- whether long-running work is foreground-only or uses native Android background execution
 
 ## Current Important Endpoints
 

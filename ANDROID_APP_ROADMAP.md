@@ -59,6 +59,18 @@ Current implementation status:
 - GitHub Actions is set up to build a debug APK and publish or update an `Android Road Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
+Known limitation in the current preview:
+
+- batch enrichment is not a true Android background worker
+- it only keeps running while the app remains open in the foreground
+
+Planned next-step architecture for that limitation:
+
+- move batch enrichment into native Android execution
+- start it from visible user action inside the app
+- run it as a foreground service with a persistent notification
+- support queue progress, stop, and eventual resume behavior from the notification or app UI
+
 ## Phase 2: Better Triage UX
 
 Improve the app with:
@@ -77,6 +89,12 @@ Improve the app with:
   - ends soon
   - vehicles
 - local summary stats in the app
+
+Additional platform work to include in this phase:
+
+- native Android foreground-service support for long-running enrichment jobs
+- explicit user-controlled background execution path with notification-based progress
+- clearer stop/resume semantics when the app leaves the foreground
 
 ## Phase 3: Data Refresh Workflow
 
