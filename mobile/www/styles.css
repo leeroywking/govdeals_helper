@@ -304,6 +304,10 @@ textarea {
   padding: 8px 12px;
 }
 
+.mini-button.details {
+  background: #fff;
+}
+
 .detail-content {
   display: grid;
   gap: 12px;

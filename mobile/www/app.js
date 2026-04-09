@@ -288,6 +288,18 @@ function openListing(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function showDetailForRow(id, options = {}) {
+  const { preserveScroll = true, revealOnMobile = false } = options;
+  state.selectedItemId = id;
+  render({ preserveScroll });
+  if (revealOnMobile && window.innerWidth < 760) {
+    requestAnimationFrame(() => {
+      const detailPanel = document.querySelector(".detail-panel");
+      detailPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+}
+
 function settingsSummaryText() {
   if (!hasApiKey()) {
     return "Codex enrichment is not configured yet.";
@@ -734,6 +746,7 @@ function renderRows(rows) {
     const title = fragment.querySelector(".row-title");
     const subtitle = fragment.querySelector(".row-subtitle");
     const metrics = fragment.querySelector(".row-metrics");
+    const detailsButton = fragment.querySelector(".details-button");
     const pursueButton = fragment.querySelector(".pursue-button");
     const rejectButton = fragment.querySelector(".reject-button");
     const enrichButton = fragment.querySelector(".enrich-button");
@@ -760,8 +773,13 @@ function renderRows(rows) {
     }
 
     main.addEventListener("click", () => {
-      state.selectedItemId = row.id;
-      render({ preserveScroll: true });
+      showDetailForRow(row.id, { preserveScroll: true, revealOnMobile: false });
+    });
+
+    detailsButton.classList.add("details");
+    detailsButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      showDetailForRow(row.id, { preserveScroll: true, revealOnMobile: true });
     });
 
     pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Unpursue" : "Pursue";

@@ -75,6 +75,7 @@ Current app features:
 - bucket-based triage views for active, pursued, rejected, vehicles, and excluded items
 - dense inbox-style rows instead of large per-item cards
 - persistent detail panel / inspection surface
+- explicit row-level `Details` action alongside row-tap selection
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device

@@ -104,6 +104,7 @@ Additional platform work to include in this phase:
 - native Android foreground-service support for long-running enrichment jobs
 - explicit user-controlled background execution path with notification-based progress
 - clearer stop/resume semantics when the app leaves the foreground
+- keep an explicit `Details` action on each row even when row-tap also selects the item
 - preserve list scroll position and avoid snap-to-top behavior after per-item actions such as pursue, review, and enrich
 - reduce full-list rerenders for row-level actions so the user can move down the list without repeated scrolling
 - add a reversible remove/reject workflow so investigated items can leave the active list without being permanently lost

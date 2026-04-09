@@ -58,8 +58,9 @@ Preferred visible row actions:
 - `Pursue`
 - `Reject`
 - `Enrich`
+- `Details`
 
-Open detail by tapping the row body, not by forcing a separate large button for every row action.
+Open detail by tapping the row body, but still keep an explicit `Details` control for users who expect a discrete action target.
 
 ## Detail Pattern
 
