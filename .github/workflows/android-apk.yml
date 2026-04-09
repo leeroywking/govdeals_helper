@@ -73,6 +73,17 @@ jobs:
         working-directory: mobile
         run: npm run sync:android
 
+      - name: Write Android SDK local.properties
+        working-directory: mobile/android
+        shell: bash
+        run: |
+          SDK_PATH="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "$SDK_PATH" ]; then
+            echo "ANDROID_SDK_ROOT and ANDROID_HOME are both unset" >&2
+            exit 1
+          fi
+          printf 'sdk.dir=%s\n' "$SDK_PATH" > local.properties
+
       - name: Build debug APK
         working-directory: mobile/android
         run: ./gradlew assembleDebug
