@@ -63,6 +63,7 @@ Known limitation in the current preview:
 
 - batch enrichment is not a true Android background worker
 - it only keeps running while the app remains open in the foreground
+- button interactions currently trigger a rerender that can snap the list back to the top, which makes multi-item triage and batch setup unnecessarily annoying
 
 Planned next-step architecture for that limitation:
 
@@ -95,6 +96,8 @@ Additional platform work to include in this phase:
 - native Android foreground-service support for long-running enrichment jobs
 - explicit user-controlled background execution path with notification-based progress
 - clearer stop/resume semantics when the app leaves the foreground
+- preserve list scroll position and avoid snap-to-top behavior after per-item actions such as pursue, review, and enrich
+- reduce full-list rerenders for row-level actions so the user can move down the list without repeated scrolling
 
 ## Phase 3: Data Refresh Workflow
 
