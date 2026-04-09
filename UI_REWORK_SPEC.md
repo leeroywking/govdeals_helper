@@ -38,6 +38,14 @@ Use filter chips for temporary narrowing inside a bucket:
 
 These should be lightweight toggles, not separate pages.
 
+Quick presets should also exist for common views:
+
+- `Nearby`
+- `High Score`
+- `Ends Soon`
+- `Vehicles`
+- `New`
+
 ### Main Content Area
 
 The main screen should be a dense, scannable list of rows instead of large cards.
@@ -158,6 +166,7 @@ This rework should deliver:
 - row-level selection for targeted enrichment
 - selected-item triage actions for pursue/hold/reject
 - selected-item restore action
+- saved custom view presets stored locally on-device
 - inline expanding detail with enrichment and comp links
 - device-state export/import for moving triage state off the phone
 - optional backend-assisted full refresh and listing refresh

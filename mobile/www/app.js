@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   model: "govdeals-openai-model",
   backendUrl: "govdeals-backend-url",
   cachedBundleMarker: "govdeals-cached-bundle-marker",
+  savedPresets: "govdeals-saved-presets",
 };
 
 const BUNDLE_DB_NAME = "govdeals-helper-bundle";
@@ -67,6 +68,7 @@ const state = {
   rememberKey: localStorage.getItem(STORAGE_KEYS.rememberKey) === "true",
   model: localStorage.getItem(STORAGE_KEYS.model) || "gpt-5-mini",
   backendUrl: localStorage.getItem(STORAGE_KEYS.backendUrl) || "",
+  savedPresets: loadObject(STORAGE_KEYS.savedPresets),
   statusMessage: "",
   statusTone: "",
   sessionApiKey: "",
@@ -91,6 +93,15 @@ const listStatsEl = document.getElementById("list-stats");
 const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
+const presetNearbyButtonEl = document.getElementById("preset-nearby-button");
+const presetHighScoreButtonEl = document.getElementById("preset-high-score-button");
+const presetEndsSoonButtonEl = document.getElementById("preset-ends-soon-button");
+const presetVehiclesButtonEl = document.getElementById("preset-vehicles-button");
+const presetNewButtonEl = document.getElementById("preset-new-button");
+const presetSelectEl = document.getElementById("preset-select");
+const savePresetButtonEl = document.getElementById("save-preset-button");
+const loadPresetButtonEl = document.getElementById("load-preset-button");
+const deletePresetButtonEl = document.getElementById("delete-preset-button");
 const selectVisibleButtonEl = document.getElementById("select-visible-button");
 const clearSelectedButtonEl = document.getElementById("clear-selected-button");
 const pursueSelectedButtonEl = document.getElementById("pursue-selected-button");
@@ -339,6 +350,147 @@ function clearSelectedRows() {
   state.selectedIds = [];
   setStatus("Cleared selected items.", "");
   render({ preserveScroll: true });
+}
+
+function currentPresetState() {
+  return {
+    bucket: state.bucket,
+    sort: state.sort,
+    search: state.search,
+    chips: { ...state.chips },
+  };
+}
+
+function applyPresetState(preset, options = {}) {
+  const { preserveScroll = false } = options;
+  state.bucket = preset.bucket || "active";
+  state.sort = preset.sort || "score";
+  state.search = preset.search || "";
+  state.chips = {
+    newOnly: false,
+    nearby: false,
+    endsSoon: false,
+    reviewed: false,
+    enriched: false,
+    hasCompLinks: false,
+    ...(preset.chips || {}),
+  };
+  state.expandedIds = [];
+  searchInputEl.value = state.search;
+  sortSelectEl.value = state.sort;
+  render({ preserveScroll });
+}
+
+function renderSavedPresets() {
+  const selected = presetSelectEl.value;
+  presetSelectEl.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Saved Presets";
+  presetSelectEl.appendChild(placeholder);
+  Object.keys(state.savedPresets)
+    .sort((left, right) => left.localeCompare(right))
+    .forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      presetSelectEl.appendChild(option);
+    });
+  presetSelectEl.value = Object.prototype.hasOwnProperty.call(state.savedPresets, selected) ? selected : "";
+}
+
+function saveCurrentPreset() {
+  const name = window.prompt("Preset name");
+  if (!name) {
+    return;
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return;
+  }
+  state.savedPresets[trimmed] = currentPresetState();
+  saveObject(STORAGE_KEYS.savedPresets, state.savedPresets);
+  renderSavedPresets();
+  presetSelectEl.value = trimmed;
+  setStatus(`Saved preset "${trimmed}".`, "positive");
+  render({ preserveScroll: true });
+}
+
+function loadSelectedPreset() {
+  const name = presetSelectEl.value;
+  if (!name || !state.savedPresets[name]) {
+    setStatus("Choose a saved preset first.", "negative");
+    render({ preserveScroll: true });
+    return;
+  }
+  applyPresetState(state.savedPresets[name], { preserveScroll: false });
+  setStatus(`Loaded preset "${name}".`, "positive");
+}
+
+function deleteSelectedPreset() {
+  const name = presetSelectEl.value;
+  if (!name || !state.savedPresets[name]) {
+    setStatus("Choose a saved preset first.", "negative");
+    render({ preserveScroll: true });
+    return;
+  }
+  delete state.savedPresets[name];
+  saveObject(STORAGE_KEYS.savedPresets, state.savedPresets);
+  renderSavedPresets();
+  setStatus(`Deleted preset "${name}".`, "");
+  render({ preserveScroll: true });
+}
+
+function applyQuickPreset(kind) {
+  if (kind === "nearby") {
+    applyPresetState({
+      bucket: "active",
+      sort: "distance",
+      search: "",
+      chips: { nearby: true },
+    });
+    setStatus("Applied quick preset: Nearby.", "positive");
+    return;
+  }
+  if (kind === "highScore") {
+    applyPresetState({
+      bucket: "active",
+      sort: "enrichedScore",
+      search: "",
+      chips: {},
+    });
+    setStatus("Applied quick preset: High Score.", "positive");
+    return;
+  }
+  if (kind === "endsSoon") {
+    applyPresetState({
+      bucket: "active",
+      sort: "endingSoon",
+      search: "",
+      chips: { endsSoon: true },
+    });
+    setStatus("Applied quick preset: Ends Soon.", "positive");
+    return;
+  }
+  if (kind === "vehicles") {
+    applyPresetState({
+      bucket: "vehicles",
+      sort: "score",
+      search: "",
+      chips: {},
+    });
+    setStatus("Applied quick preset: Vehicles.", "positive");
+    return;
+  }
+  if (kind === "new") {
+    applyPresetState({
+      bucket: "active",
+      sort: "score",
+      search: "",
+      chips: { newOnly: true },
+    });
+    setStatus("Applied quick preset: New.", "positive");
+  }
 }
 
 function applySelectionState(mode) {
@@ -1564,6 +1716,7 @@ async function render(options = {}) {
   if (!state.manifest) {
     return;
   }
+  renderSavedPresets();
   renderBuckets();
   renderChips();
 
@@ -1629,6 +1782,14 @@ async function initialize() {
       state.sort = sortSelectEl.value;
       render({ preserveScroll: true });
     });
+    presetNearbyButtonEl.addEventListener("click", () => applyQuickPreset("nearby"));
+    presetHighScoreButtonEl.addEventListener("click", () => applyQuickPreset("highScore"));
+    presetEndsSoonButtonEl.addEventListener("click", () => applyQuickPreset("endsSoon"));
+    presetVehiclesButtonEl.addEventListener("click", () => applyQuickPreset("vehicles"));
+    presetNewButtonEl.addEventListener("click", () => applyQuickPreset("new"));
+    savePresetButtonEl.addEventListener("click", saveCurrentPreset);
+    loadPresetButtonEl.addEventListener("click", loadSelectedPreset);
+    deletePresetButtonEl.addEventListener("click", deleteSelectedPreset);
     selectVisibleButtonEl.addEventListener("click", selectVisibleRows);
     clearSelectedButtonEl.addEventListener("click", clearSelectedRows);
     pursueSelectedButtonEl.addEventListener("click", () => applySelectionState("pursue"));

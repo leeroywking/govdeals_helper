@@ -46,6 +46,23 @@
           <option value="bid">Sort: Current Bid</option>
           <option value="title">Sort: Title</option>
         </select>
+        <div class="preset-controls">
+          <div class="quick-presets">
+            <button id="preset-nearby-button" class="ghost-button" type="button">Nearby</button>
+            <button id="preset-high-score-button" class="ghost-button" type="button">High Score</button>
+            <button id="preset-ends-soon-button" class="ghost-button" type="button">Ends Soon</button>
+            <button id="preset-vehicles-button" class="ghost-button" type="button">Vehicles</button>
+            <button id="preset-new-button" class="ghost-button" type="button">New</button>
+          </div>
+          <div class="saved-preset-row">
+            <select id="preset-select">
+              <option value="">Saved Presets</option>
+            </select>
+            <button id="save-preset-button" class="ghost-button" type="button">Save Current</button>
+            <button id="load-preset-button" class="ghost-button" type="button">Load</button>
+            <button id="delete-preset-button" class="ghost-button" type="button">Delete</button>
+          </div>
+        </div>
       </section>
 
       <nav class="bucket-nav" id="bucket-nav"></nav>

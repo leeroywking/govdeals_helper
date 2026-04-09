@@ -28,6 +28,7 @@ If the Android app gains new local workflows, also document:
 - any security caveats for local API-key usage
 - whether long-running work is foreground-only or uses native Android background execution
 - whether refreshed/ended listing states are cached locally and how they survive app restarts
+- whether filter/view presets are saved locally and how they are restored
 
 ## Current Important Endpoints
 

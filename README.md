@@ -93,6 +93,8 @@ Current app features:
 - plain-text JSON export/import of local device state for transfer back to a computer or another device
 - per-item Codex enrichment with local API-key configuration
 - batch enrichment for the current filtered set, selected set, or pursued set
+- quick view presets for nearby, high-score, ends-soon, vehicles, and new
+- saved custom filter presets stored on-device
 - search, sorting, and filter chips inside the app
 - expanded row detail with score reasons, enrichment notes, and comp links
 - optional local-backend URL setting for listing refresh and full refresh workflow

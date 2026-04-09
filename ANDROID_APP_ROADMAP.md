@@ -67,6 +67,8 @@ Current implementation status:
 - optional expanded-row listing refresh is implemented against the current backend dataset when a reachable backend URL is configured
 - backend-assisted refreshed bundles are cached on-device and restored on startup when newer than the packaged bundle
 - listings that disappear during a later full refresh are retained in a separate local `ended` bucket instead of silently vanishing
+- quick view presets are implemented for nearby, high score, ends soon, vehicles, and new
+- saved custom filter presets are implemented locally on-device
 - GitHub Actions is set up to build a debug APK and publish or update an `Android Road Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
@@ -88,7 +90,6 @@ Planned next-step architecture for that limitation:
 
 Improve the app with:
 
-- saved filters
 - quick actions for:
   - reviewed
   - shortlist
@@ -121,6 +122,7 @@ Additional platform work to include in this phase:
 - add a reversible remove/reject workflow so investigated items can leave the active list without being permanently lost
 - support a holding area or undo bucket so mistakenly rejected items can be restored easily
 - continue reducing rerender-heavy row actions so selection and review flows feel stable on long lists
+- persist current search/sort/chip state more aggressively between app launches, not just named presets
 
 ## Phase 3: Data Refresh Workflow
 
