@@ -126,9 +126,9 @@ Or:
 python3 -m app.mobile_bundle
 ```
 
-GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Road Preview`.
+GitHub Actions runs the Python test suite with coverage on pushes to `main`, then builds an Android debug APK and publishes or updates a prerelease named `Android Refresh Preview`.
 
-On Android, the Road Preview can now refresh directly on-device without any backend:
+On Android, the Refresh Preview can now refresh directly on-device without any backend:
 
 - it fetches current GovDeals listings itself
 - reruns the first-layer scoring/filter heuristics locally
@@ -142,6 +142,26 @@ If the app can also reach the local query API over the network, it can additiona
 - refresh an expanded listing against the current backend dataset through `GET /listing/{account_id}/{asset_id}`
 
 This backend-assisted refresh path is optional. The packaged app still works offline against its bundled JSON.
+
+## Tests
+
+Repo-level Python tests now cover the deterministic filtering and bundle-export layer.
+
+Set up a local virtualenv and run them with:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
+```
+
+Current focused coverage from the latest local run on April 9, 2026:
+
+- `app/first_layer.py`: `60%`
+- `app/mobile_bundle.py`: `91%`
+- combined for that measured Python surface: `66%`
+
+This coverage is intentionally focused on the deterministic Python layer. It does not yet include Android native code, WebView UI behavior, or live GovDeals network calls.
 
 ## What The API Returns
 

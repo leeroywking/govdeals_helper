@@ -21,6 +21,12 @@ If a new reusable endpoint or analysis workflow is added, document:
 - what files it writes
 - important caveats or heuristic limitations
 
+If tests or coverage expectations change, document:
+
+- how to run the tests locally
+- what surface area is actually covered
+- any meaningful current coverage figures if they are being cited in repo docs
+
 If the Android app gains new local workflows, also document:
 
 - what state is persisted on-device

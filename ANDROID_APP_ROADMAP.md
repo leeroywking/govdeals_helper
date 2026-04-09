@@ -71,7 +71,7 @@ Current implementation status:
 - listings that disappear during a later full refresh are retained in a separate local `ended` bucket instead of silently vanishing
 - quick view presets are implemented for nearby, high score, ends soon, vehicles, and new
 - saved custom filter presets are implemented locally on-device
-- GitHub Actions is set up to build a debug APK and publish or update an `Android Road Preview` prerelease on pushes to `main`
+- GitHub Actions is set up to run Python tests with coverage, build a debug APK, and publish or update an `Android Refresh Preview` prerelease on pushes to `main`
 - first usable trial target is now aligned with this phase
 
 Known limitation in the current preview:

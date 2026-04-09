@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--cov=app.first_layer --cov=app.mobile_bundle --cov-report=term-missing --cov-report=xml"

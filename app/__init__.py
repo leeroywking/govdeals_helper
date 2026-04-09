@@ -1,1 +1,1 @@
-# Package marker for the local query app.
+# GovDeals Helper Python package marker.
