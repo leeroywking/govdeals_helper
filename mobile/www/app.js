@@ -13,6 +13,10 @@ const STORAGE_KEYS = {
   savedPresets: "govdeals-saved-presets",
 };
 
+const GovDealsRefresh = window.Capacitor?.registerPlugin
+  ? window.Capacitor.registerPlugin("GovDealsRefresh")
+  : null;
+
 const BUNDLE_DB_NAME = "govdeals-helper-bundle";
 const BUNDLE_DB_VERSION = 1;
 const BUNDLE_STORE = "bundle";
@@ -73,6 +77,7 @@ const state = {
   statusTone: "",
   sessionApiKey: "",
   loadingEnrichmentIds: [],
+  refreshPollId: null,
   batchRun: {
     running: false,
     scope: "",
@@ -247,8 +252,36 @@ async function readCachedBundle() {
   };
 }
 
+async function readNativeCachedBundle() {
+  if (!hasNativeRefresh()) {
+    return null;
+  }
+  try {
+    const result = await GovDealsRefresh.getCachedBundle();
+    if (!result?.available || !result.bundle) {
+      return null;
+    }
+    const bundle = result.bundle;
+    return {
+      manifest: bundle.manifest,
+      datasets: {
+        mainCandidates: bundle.datasets?.mainCandidates || [],
+        consumerVehicles: bundle.datasets?.consumerVehicles || [],
+        excludedItems: bundle.datasets?.excludedItems || [],
+        endedItems: bundle.datasets?.endedItems || [],
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getApiKey() {
   return state.rememberKey ? localStorage.getItem(STORAGE_KEYS.apiKey) || "" : state.sessionApiKey;
+}
+
+function hasNativeRefresh() {
+  return Boolean(GovDealsRefresh && window.Capacitor?.isNativePlatform?.());
 }
 
 function setApiKey(value, remember) {
@@ -1120,7 +1153,27 @@ async function runBatchEnrichment(scope) {
 
 function requestBatchStop() {
   if (!state.batchRun.running) {
+    if (hasNativeRefresh()) {
+      GovDealsRefresh.getRefreshStatus()
+        .then((status) => {
+          if (status?.running) {
+            return GovDealsRefresh.cancelRefresh().then(() => {
+              setStatus("Requested stop for the on-device refresh.", "warning");
+              render({ preserveScroll: true });
+            });
+          }
+          setStatus("No batch enrichment or on-device refresh is running.", "negative");
+          render({ preserveScroll: true });
+          return null;
+        })
+        .catch((error) => {
+          setStatus(`Stop request failed: ${String(error)}`, "negative");
+          render({ preserveScroll: true });
+        });
+      return;
+    }
     setStatus("No batch enrichment is running.", "negative");
+    render({ preserveScroll: true });
     return;
   }
   state.batchRun.stopRequested = true;
@@ -1644,6 +1697,11 @@ function findRowById(id) {
 }
 
 async function refreshExpandedRow(row) {
+  if (hasNativeRefresh() && !hasBackend()) {
+    setStatus("Item-level refresh is not separate on this build yet. Run Refresh Listings to pull a fresh mobile bundle directly on-device.", "warning");
+    render({ preserveScroll: true });
+    return;
+  }
   if (!hasBackend()) {
     return;
   }
@@ -1667,12 +1725,106 @@ async function refreshExpandedRow(row) {
   }
 }
 
+async function syncNativeRefreshStatus() {
+  if (!hasNativeRefresh()) {
+    return null;
+  }
+  try {
+    const status = await GovDealsRefresh.getRefreshStatus();
+    const message = status?.message || "Refresh status unavailable.";
+    const phase = status?.phase || "idle";
+    if (phase === "running" || phase === "scoring" || phase === "cancel_requested") {
+      setStatus(
+        `${message} ${status.pagesFetched || 0}/${status.totalPages || "?"} pages | ${status.uniqueRows || 0} unique rows`,
+        "warning",
+      );
+    } else if (phase === "complete") {
+      setStatus(`${message} Bundle generated ${status.generatedAt || "recently"}.`, "positive");
+    } else if (phase === "failed") {
+      setStatus(`${message} ${status.error || ""}`.trim(), "negative");
+    } else if (phase === "cancelled") {
+      setStatus(message, "warning");
+    }
+    return status;
+  } catch (error) {
+    setStatus(`Native refresh status failed: ${String(error)}`, "negative");
+    return null;
+  }
+}
+
+function stopRefreshPolling() {
+  if (state.refreshPollId) {
+    window.clearInterval(state.refreshPollId);
+    state.refreshPollId = null;
+  }
+}
+
+async function hydrateFromNativeBundleIfNewer() {
+  const nativeBundle = await readNativeCachedBundle();
+  if (!nativeBundle) {
+    return false;
+  }
+  if (generatedAtValue(nativeBundle.manifest) >= generatedAtValue(state.manifest)) {
+    mergeBundleDatasets(nativeBundle.manifest, nativeBundle.datasets);
+    await writeCachedBundle(state.manifest, state.datasets);
+    return true;
+  }
+  return false;
+}
+
+async function startRefreshPolling() {
+  stopRefreshPolling();
+  state.refreshPollId = window.setInterval(async () => {
+    const status = await syncNativeRefreshStatus();
+    if (!status) {
+      return;
+    }
+    if (!status.running) {
+      stopRefreshPolling();
+      if (status.phase === "complete") {
+        const updated = await hydrateFromNativeBundleIfNewer();
+        if (updated) {
+          setStatus(`Refresh complete. Bundle generated ${state.manifest.generatedAt}.`, "positive");
+          render({ preserveScroll: false });
+          return;
+        }
+      }
+      render({ preserveScroll: true });
+    } else {
+      render({ preserveScroll: true });
+    }
+  }, 2500);
+}
+
 async function refreshAllListings() {
+  if (hasNativeRefresh()) {
+    if (!window.confirm("Run a full on-device refresh? The Android app will fetch current GovDeals listings, rescore them locally, and keep running under a foreground notification.")) {
+      return;
+    }
+    try {
+      const permission = await GovDealsRefresh.ensureNotificationPermission();
+      if (permission && permission.granted === false) {
+        setStatus("Notification permission is required so Android can keep the refresh running in a foreground service.", "negative");
+        render({ preserveScroll: true });
+        return;
+      }
+      await GovDealsRefresh.startRefresh({ pauseSeconds: 2, pageSize: 100 });
+      setStatus("On-device refresh started. Android should show a foreground notification while it runs.", "warning");
+      render({ preserveScroll: true });
+      await startRefreshPolling();
+      return;
+    } catch (error) {
+      setStatus(`Native refresh failed to start: ${String(error)}`, "negative");
+      render({ preserveScroll: true });
+      return;
+    }
+  }
+
   if (!hasBackend()) {
-    openSettingsDialog("Set a backend URL before running a full refresh.");
+    openSettingsDialog("This environment has no native Android refresh bridge. Set a backend URL or run the Android build.");
     return;
   }
-  if (!window.confirm("Run a full refresh? This will fetch current listings, rebuild first-layer outputs, rebuild the mobile bundle, merge it into the app, and mark newly appeared listings as new.")) {
+  if (!window.confirm("Run a full refresh through the backend pipeline?")) {
     return;
   }
   setStatus("Refreshing listings from the backend pipeline...", "warning");
@@ -1771,6 +1923,15 @@ async function initialize() {
     } catch (error) {
       setStatus(`Cached bundle unavailable: ${String(error)}`, "warning");
     }
+    try {
+      const nativeBundle = await readNativeCachedBundle();
+      if (nativeBundle && generatedAtValue(nativeBundle.manifest) >= generatedAtValue(initialBundle.manifest)) {
+        initialBundle = nativeBundle;
+        setStatus(`Loaded native refreshed bundle from ${nativeBundle.manifest.generatedAt}.`, "positive");
+      }
+    } catch (error) {
+      setStatus(`Native bundle unavailable: ${String(error)}`, "warning");
+    }
     state.manifest = initialBundle.manifest;
     state.datasets = initialBundle.datasets;
 
@@ -1811,6 +1972,13 @@ async function initialize() {
     copyStateButtonEl.addEventListener("click", copyStateText);
     downloadStateButtonEl.addEventListener("click", downloadStateText);
     importStateButtonEl.addEventListener("click", importStateText);
+
+    if (hasNativeRefresh()) {
+      const status = await syncNativeRefreshStatus();
+      if (status?.running) {
+        await startRefreshPolling();
+      }
+    }
 
     await render();
   } catch (error) {

@@ -11,6 +11,7 @@ The right mental model is:
 - inbox for navigation and fast disposition
 - detail view for inspection
 - queue/status area for enrichment and refresh work
+- Android-native foreground refresh for full dataset updates
 
 ## Core Structural Pattern
 
@@ -172,6 +173,7 @@ This rework should deliver:
 - optional backend-assisted full refresh and listing refresh
 - refreshed bundle caching so newer backend-refreshed data survives app restart
 - ended-list retention so disappeared listings stay reviewable after refresh
+- Android-native full refresh without requiring a backend URL
 - row-local state updates without snap-to-top behavior
 
 It does not need to deliver full refresh or native Android background services yet.

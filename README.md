@@ -89,6 +89,7 @@ Current app features:
 - local `new` tagging after refreshed bundles are merged into the app
 - separate `ended` bucket for listings that disappear during a later full refresh
 - refreshed bundle caching on-device so backend-refreshed data survives app restarts
+- Android-native on-device full refresh with a foreground notification and no backend requirement
 - plain-text export of pursued items for transfer back to a computer
 - plain-text JSON export/import of local device state for transfer back to a computer or another device
 - per-item Codex enrichment with local API-key configuration
@@ -97,7 +98,7 @@ Current app features:
 - saved custom filter presets stored on-device
 - search, sorting, and filter chips inside the app
 - expanded row detail with score reasons, enrichment notes, and comp links
-- optional local-backend URL setting for listing refresh and full refresh workflow
+- Android-native refresh is the default path on the phone build; backend URL is now optional and reserved for later cross-device/web coordination
 
 The app reads app-ready JSON files from `mobile/www/data/`.
 
@@ -127,7 +128,14 @@ python3 -m app.mobile_bundle
 
 GitHub Actions builds an Android debug APK on pushes to `main` and publishes or updates a prerelease named `Android Road Preview`.
 
-If the app can reach the local query API over the network, it can also:
+On Android, the Road Preview can now refresh directly on-device without any backend:
+
+- it fetches current GovDeals listings itself
+- reruns the first-layer scoring/filter heuristics locally
+- writes a refreshed mobile bundle into app storage
+- continues under a foreground Android notification while the refresh runs
+
+If the app can also reach the local query API over the network, it can additionally:
 
 - refresh the full dataset/filter/bundle pipeline through `POST /analysis/refresh-all`
 - fetch refreshed bundle datasets through `GET /bundle/mobile/{dataset_name}`

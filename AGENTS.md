@@ -29,6 +29,7 @@ If the Android app gains new local workflows, also document:
 - whether long-running work is foreground-only or uses native Android background execution
 - whether refreshed/ended listing states are cached locally and how they survive app restarts
 - whether filter/view presets are saved locally and how they are restored
+- whether dataset refresh requires a backend or is handled directly on-device
 
 ## Current Important Endpoints
 

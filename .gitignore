@@ -38,4 +38,6 @@ data/first_layer/
 # Local scratch
 tmp/
 scratch/
-mobile/android/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/local.properties

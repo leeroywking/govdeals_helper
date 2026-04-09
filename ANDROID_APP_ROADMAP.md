@@ -63,7 +63,9 @@ Current implementation status:
 - selected-item pursue/hold/reject actions are implemented
 - selected-item restore is implemented
 - comp-link capture is implemented when enrichment can find source URLs
-- optional backend-assisted full refresh is implemented when a reachable local query API URL is configured in the app
+- Android-native on-device full refresh is implemented and does not require a backend URL
+- foreground notification-driven refresh execution is implemented for Android
+- backend-assisted full refresh remains as a secondary fallback for non-native/local-web contexts
 - optional expanded-row listing refresh is implemented against the current backend dataset when a reachable backend URL is configured
 - backend-assisted refreshed bundles are cached on-device and restored on startup when newer than the packaged bundle
 - listings that disappear during a later full refresh are retained in a separate local `ended` bucket instead of silently vanishing
@@ -78,8 +80,9 @@ Known limitation in the current preview:
 - it only keeps running while the app remains open in the foreground
 - button interactions currently trigger a rerender that can snap the list back to the top, which makes multi-item triage and batch setup unnecessarily annoying
 - batch enrichment is still foreground-only and not yet moved into a native Android service
+- item-level refresh still relies on the backend path; the native Android refresh path currently handles full dataset refresh rather than isolated listing refresh
 
-Planned next-step architecture for that limitation:
+Planned next-step architecture for the remaining background limitation:
 
 - move batch enrichment into native Android execution
 - start it from visible user action inside the app
