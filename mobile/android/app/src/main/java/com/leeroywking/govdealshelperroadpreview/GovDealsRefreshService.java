@@ -72,6 +72,7 @@ public class GovDealsRefreshService extends Service {
         double pauseSeconds = intent != null ? intent.getDoubleExtra(EXTRA_PAUSE_SECONDS, 2.0) : 2.0;
         cancelRequested = false;
         createChannel();
+        updateStatus("starting", "Starting on-device refresh…", 0, 0, 0, null, null);
         startForeground(NOTIFICATION_ID, buildNotification("Starting refresh…", 0, 0, true));
 
         new Thread(() -> runRefresh(pageSize, pauseSeconds), "govdeals-refresh").start();
@@ -203,7 +204,7 @@ public class GovDealsRefreshService extends Service {
     private void updateStatus(String phase, String message, int pagesFetched, int totalPages, int uniqueRows, @Nullable String generatedAt, @Nullable String error) {
         JSONObject status = GovDealsRefreshStore.defaultStatus();
         try {
-            status.put("running", "running".equals(phase) || "scoring".equals(phase) || "cancel_requested".equals(phase));
+            status.put("running", "starting".equals(phase) || "running".equals(phase) || "scoring".equals(phase) || "cancel_requested".equals(phase));
             status.put("phase", phase);
             status.put("message", message);
             status.put("pagesFetched", pagesFetched);

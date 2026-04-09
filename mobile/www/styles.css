@@ -238,6 +238,21 @@ textarea {
   color: var(--muted);
 }
 
+.status-panel .refresh-running {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+.status-panel .refresh-error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.status-panel .refresh-success {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .list-panel {
   padding: 14px;
   min-height: 50vh;

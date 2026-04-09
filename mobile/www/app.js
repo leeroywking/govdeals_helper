@@ -87,6 +87,16 @@ const state = {
     currentTitle: "",
     stopRequested: false,
   },
+  refreshRun: {
+    running: false,
+    phase: "idle",
+    message: "",
+    pagesFetched: 0,
+    totalPages: 0,
+    uniqueRows: 0,
+    generatedAt: "",
+    error: "",
+  },
 };
 
 const bucketNavEl = document.getElementById("bucket-nav");
@@ -95,6 +105,7 @@ const rowsEl = document.getElementById("rows");
 const listTitleEl = document.getElementById("list-title");
 const datasetStatusEl = document.getElementById("dataset-status");
 const listStatsEl = document.getElementById("list-stats");
+const refreshStatusEl = document.getElementById("refresh-status");
 const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
@@ -338,6 +349,52 @@ function hasApiKey() {
 
 function hasBackend() {
   return Boolean(getBackendUrl());
+}
+
+function setRefreshRun(patch) {
+  state.refreshRun = {
+    ...state.refreshRun,
+    ...patch,
+  };
+}
+
+function resetRefreshRun() {
+  state.refreshRun = {
+    running: false,
+    phase: "idle",
+    message: "",
+    pagesFetched: 0,
+    totalPages: 0,
+    uniqueRows: 0,
+    generatedAt: "",
+    error: "",
+  };
+}
+
+function refreshStatusText() {
+  const status = state.refreshRun;
+  if (!status.message) {
+    return "";
+  }
+  const progress = status.running
+    ? ` ${status.pagesFetched || 0}/${status.totalPages || "?"} pages | ${status.uniqueRows || 0} unique`
+    : "";
+  const generated = !status.running && status.generatedAt ? ` Bundle ${status.generatedAt}.` : "";
+  const error = !status.running && status.error ? ` ${status.error}` : "";
+  return `${status.message}${progress}${generated}${error}`.trim();
+}
+
+function refreshStatusClass() {
+  if (state.refreshRun.running) {
+    return "refresh-running";
+  }
+  if (state.refreshRun.phase === "failed") {
+    return "refresh-error";
+  }
+  if (state.refreshRun.phase === "complete") {
+    return "refresh-success";
+  }
+  return "";
 }
 
 function isIn(id, collection) {
@@ -1756,6 +1813,16 @@ async function syncNativeRefreshStatus() {
   }
   try {
     const status = await GovDealsRefresh.getRefreshStatus();
+    setRefreshRun({
+      running: Boolean(status?.running),
+      phase: status?.phase || "idle",
+      message: status?.message || "Refresh status unavailable.",
+      pagesFetched: status?.pagesFetched || 0,
+      totalPages: status?.totalPages || 0,
+      uniqueRows: status?.uniqueRows || 0,
+      generatedAt: status?.generatedAt || "",
+      error: status?.error || "",
+    });
     const message = status?.message || "Refresh status unavailable.";
     const phase = status?.phase || "idle";
     if (phase === "running" || phase === "scoring" || phase === "cancel_requested") {
@@ -1799,7 +1866,7 @@ async function hydrateFromNativeBundleIfNewer() {
 
 async function startRefreshPolling() {
   stopRefreshPolling();
-  state.refreshPollId = window.setInterval(async () => {
+  const poll = async () => {
     const status = await syncNativeRefreshStatus();
     if (!status) {
       return;
@@ -1818,7 +1885,9 @@ async function startRefreshPolling() {
     } else {
       render({ preserveScroll: true });
     }
-  }, 2500);
+  };
+  await poll();
+  state.refreshPollId = window.setInterval(poll, 2500);
 }
 
 async function refreshAllListings() {
@@ -1829,16 +1898,44 @@ async function refreshAllListings() {
     try {
       const permission = await GovDealsRefresh.ensureNotificationPermission();
       if (permission && permission.granted === false) {
-        setStatus("Notification permission is required so Android can keep the refresh running in a foreground service.", "negative");
+        setStatus("Notification permission was denied. The app will still try to start refresh, but Android may hide or limit the foreground notification.", "warning");
+      }
+      setRefreshRun({
+        running: true,
+        phase: "starting",
+        message: "Starting on-device refresh…",
+        pagesFetched: 0,
+        totalPages: 0,
+        uniqueRows: 0,
+        generatedAt: "",
+        error: "",
+      });
+      setStatus("Starting on-device refresh...", "warning");
+      render({ preserveScroll: true });
+      try {
+        await GovDealsRefresh.startRefresh({ pauseSeconds: 2, pageSize: 100 });
+      } catch (error) {
+        setRefreshRun({
+          running: false,
+          phase: "failed",
+          message: "Native refresh failed to start.",
+          error: String(error),
+        });
+        setStatus(`Native refresh failed to start: ${String(error)}`, "negative");
         render({ preserveScroll: true });
         return;
       }
-      await GovDealsRefresh.startRefresh({ pauseSeconds: 2, pageSize: 100 });
       setStatus("On-device refresh started. Android should show a foreground notification while it runs.", "warning");
       render({ preserveScroll: true });
       await startRefreshPolling();
       return;
     } catch (error) {
+      setRefreshRun({
+        running: false,
+        phase: "failed",
+        message: "Native refresh failed to start.",
+        error: String(error),
+      });
       setStatus(`Native refresh failed to start: ${String(error)}`, "negative");
       render({ preserveScroll: true });
       return;
@@ -1846,6 +1943,12 @@ async function refreshAllListings() {
   }
 
   if (isAndroidRuntime()) {
+    setRefreshRun({
+      running: false,
+      phase: "failed",
+      message: "Android refresh bridge missing.",
+      error: "This build is missing the native refresh bridge.",
+    });
     setStatus("This Android build did not expose the native refresh bridge correctly. Full refresh should run on-device and should not require a backend URL on Android.", "negative");
     render({ preserveScroll: true });
     return;
@@ -1907,6 +2010,7 @@ async function render(options = {}) {
   batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "visible");
   batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
   batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
+  refreshButtonEl.classList.toggle("busy", state.refreshRun.running);
   const hasSelected = state.selectedIds.length > 0;
   const canMutateSelection = hasSelected && state.bucket !== "ended";
   selectVisibleButtonEl.disabled = state.batchRun.running;
@@ -1919,13 +2023,16 @@ async function render(options = {}) {
   batchVisibleButtonEl.disabled = state.batchRun.running;
   batchPursuedButtonEl.disabled = state.batchRun.running;
   batchStopButtonEl.disabled = !state.batchRun.running;
-  refreshButtonEl.disabled = state.batchRun.running;
+  refreshButtonEl.disabled = state.batchRun.running || state.refreshRun.running;
   batchStatusEl.textContent = batchStatusText();
 
   const rows = sortRows(filteredRowsForCurrentBucket());
   listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
   datasetStatusEl.textContent = state.statusMessage || defaultStatusText();
   listStatsEl.textContent = `${rows.length} visible | Selectable ${selectableRowsCount()} | Selected ${state.selectedIds.length} | New ${state.newIds.length} | Ended ${(state.datasets.endedItems || []).length} | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
+  refreshStatusEl.textContent = refreshStatusText();
+  refreshStatusEl.className = refreshStatusClass();
+  refreshButtonEl.textContent = state.refreshRun.running ? "Refreshing..." : "Refresh Listings";
   renderRows(rows);
 
   if (preserveScroll) {
