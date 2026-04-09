@@ -81,6 +81,7 @@ Improve the app with:
   - reviewed
   - shortlist
   - skip
+- reject / remove from active list
 - pinned explanation fields:
   - positive reasons
   - negative reasons
@@ -90,6 +91,11 @@ Improve the app with:
   - ends soon
   - vehicles
 - local summary stats in the app
+- triage buckets such as:
+  - active
+  - pursued
+  - rejected
+  - holding / undo area
 
 Additional platform work to include in this phase:
 
@@ -98,6 +104,8 @@ Additional platform work to include in this phase:
 - clearer stop/resume semantics when the app leaves the foreground
 - preserve list scroll position and avoid snap-to-top behavior after per-item actions such as pursue, review, and enrich
 - reduce full-list rerenders for row-level actions so the user can move down the list without repeated scrolling
+- add a reversible remove/reject workflow so investigated items can leave the active list without being permanently lost
+- support a holding area or undo bucket so mistakenly rejected items can be restored easily
 
 ## Phase 3: Data Refresh Workflow
 
