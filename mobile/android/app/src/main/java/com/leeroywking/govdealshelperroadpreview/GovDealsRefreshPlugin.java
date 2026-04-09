@@ -17,6 +17,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 @CapacitorPlugin(
@@ -80,8 +81,12 @@ public class GovDealsRefreshPlugin extends Plugin {
     @PluginMethod
     public void getRefreshStatus(PluginCall call) {
         JSONObject status = GovDealsRefreshStore.readStatus(getContext());
-        JSObject result = JSObject.fromJSONObject(status);
-        call.resolve(result);
+        try {
+            JSObject result = JSObject.fromJSONObject(status);
+            call.resolve(result);
+        } catch (JSONException error) {
+            call.reject("Failed to serialize refresh status", error);
+        }
     }
 
     @PluginMethod
@@ -90,7 +95,12 @@ public class GovDealsRefreshPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("available", bundle != null);
         if (bundle != null) {
-            result.put("bundle", JSObject.fromJSONObject(bundle));
+            try {
+                result.put("bundle", JSObject.fromJSONObject(bundle));
+            } catch (JSONException error) {
+                call.reject("Failed to serialize cached bundle", error);
+                return;
+            }
         }
         call.resolve(result);
     }

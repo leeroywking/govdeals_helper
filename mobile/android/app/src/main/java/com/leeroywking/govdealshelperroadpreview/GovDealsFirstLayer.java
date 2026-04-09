@@ -555,7 +555,7 @@ public final class GovDealsFirstLayer {
         }
     }
 
-    private static final class ScoreResult {
+    private static class ScoreResult {
         final double score;
         final List<String> positives;
         final List<String> negatives;
