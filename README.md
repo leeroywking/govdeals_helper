@@ -74,17 +74,18 @@ Current app features:
 
 - bucket-based triage views for active, pursued, rejected, vehicles, and excluded items
 - dense inbox-style rows instead of large per-item cards
-- persistent detail panel / inspection surface
-- explicit row-level `Details` action alongside row-tap selection
+- inline expanding detail sections inside each row
+- explicit row-level `Details` action plus chevron-style expand affordance
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device
+- separate holding/not-holding state stored on-device
 - rejected/restore workflow stored on-device
 - plain-text export of pursued items for transfer back to a computer
 - per-item Codex enrichment with local API-key configuration
 - batch enrichment for the current filtered set or the pursued set
 - search, sorting, and filter chips inside the app
-- item detail panel with score reasons, enrichment notes, and comp links
+- expanded row detail with score reasons, enrichment notes, and comp links
 
 The app reads app-ready JSON files from `mobile/www/data/`.
 

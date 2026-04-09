@@ -50,10 +50,11 @@ Success condition:
 Current implementation status:
 
 - inbox-style bucketed triage UI is implemented
-- dense rows plus persistent detail panel have replaced the earlier card-heavy layout
+- dense rows plus inline expandable detail sections have replaced the earlier card-heavy layout
 - app shell is implemented under `mobile/`
 - app-ready JSON bundle export is implemented
 - reviewed state is stored locally on-device via `localStorage`
+- holding state is stored locally on-device via `localStorage`
 - pursued-state export is implemented as plain text download/copy
 - per-item Codex enrichment is implemented with local API-key settings and saved enrichment state
 - batch enrichment is implemented for filtered or pursued items while the app remains open
@@ -105,6 +106,7 @@ Additional platform work to include in this phase:
 - explicit user-controlled background execution path with notification-based progress
 - clearer stop/resume semantics when the app leaves the foreground
 - keep an explicit `Details` action on each row even when row-tap also selects the item
+- use an inline expansion or chevron-style affordance so detail feels attached to the row rather than detached at the bottom of the screen
 - preserve list scroll position and avoid snap-to-top behavior after per-item actions such as pursue, review, and enrich
 - reduce full-list rerenders for row-level actions so the user can move down the list without repeated scrolling
 - add a reversible remove/reject workflow so investigated items can leave the active list without being permanently lost

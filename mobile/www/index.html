@@ -15,7 +15,7 @@
         <div class="title-block">
           <p class="eyebrow">GovDeals Helper</p>
           <h1>Road Preview Build</h1>
-          <p class="subtitle">Inbox-style triage for current candidates, vehicles, rejected items, and Codex enrichment.</p>
+          <p class="subtitle">Inline triage queue for current candidates, holding, pursuit, rejection, vehicles, and Codex enrichment.</p>
         </div>
         <div class="topbar-actions">
           <button id="batch-visible-button" class="ghost-button" type="button">Enrich Visible</button>
@@ -47,24 +47,14 @@
         <div id="batch-status"></div>
       </section>
 
-      <main class="workspace">
-        <section class="list-panel">
-          <div class="list-header">
-            <div>
-              <p class="eyebrow">Queue</p>
-              <h2 id="list-title">Active</h2>
-            </div>
+      <main class="list-panel">
+        <div class="list-header">
+          <div>
+            <p class="eyebrow">Queue</p>
+            <h2 id="list-title">Active</h2>
           </div>
-          <div id="rows" class="rows"></div>
-        </section>
-
-        <aside class="detail-panel">
-          <div class="detail-header">
-            <p class="eyebrow">Detail</p>
-            <h2 id="detail-title">Select an item</h2>
-          </div>
-          <div id="detail-content" class="detail-content"></div>
-        </aside>
+        </div>
+        <div id="rows" class="rows"></div>
       </main>
     </div>
 
@@ -118,18 +108,23 @@
     <template id="row-template">
       <article class="row-card">
         <button class="row-main" type="button">
-          <div class="row-title-block">
-            <p class="row-title"></p>
-            <p class="row-subtitle"></p>
+          <div class="row-main-header">
+            <div class="row-title-block">
+              <p class="row-title"></p>
+              <p class="row-subtitle"></p>
+            </div>
+            <span class="expand-indicator" aria-hidden="true">▾</span>
           </div>
           <div class="row-metrics"></div>
         </button>
         <div class="row-actions">
           <button class="mini-button details-button" type="button">Details</button>
           <button class="mini-button pursue-button" type="button"></button>
+          <button class="mini-button hold-button" type="button"></button>
           <button class="mini-button reject-button" type="button"></button>
           <button class="mini-button enrich-button" type="button"></button>
         </div>
+        <section class="row-detail"></section>
       </article>
     </template>
 

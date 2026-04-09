@@ -1,6 +1,7 @@
 const STORAGE_KEYS = {
   reviewed: "govdeals-reviewed-ids",
   pursued: "govdeals-pursued-ids",
+  holding: "govdeals-holding-ids",
   rejected: "govdeals-rejected-ids",
   enrichments: "govdeals-enrichments",
   apiKey: "govdeals-openai-api-key",
@@ -11,6 +12,7 @@ const STORAGE_KEYS = {
 const BUCKETS = [
   { key: "active", label: "Active" },
   { key: "pursued", label: "Pursued" },
+  { key: "holding", label: "Holding" },
   { key: "rejected", label: "Rejected" },
   { key: "vehicles", label: "Vehicles" },
   { key: "excluded", label: "Excluded" },
@@ -28,7 +30,7 @@ const state = {
   manifest: null,
   datasets: {},
   bucket: "active",
-  selectedItemId: "",
+  expandedIds: [],
   search: "",
   sort: "score",
   chips: {
@@ -40,6 +42,7 @@ const state = {
   },
   reviewedIds: loadArray(STORAGE_KEYS.reviewed),
   pursuedIds: loadArray(STORAGE_KEYS.pursued),
+  holdingIds: loadArray(STORAGE_KEYS.holding),
   rejectedIds: loadArray(STORAGE_KEYS.rejected),
   enrichments: loadObject(STORAGE_KEYS.enrichments),
   rememberKey: localStorage.getItem(STORAGE_KEYS.rememberKey) === "true",
@@ -60,8 +63,6 @@ const state = {
 const bucketNavEl = document.getElementById("bucket-nav");
 const chipBarEl = document.getElementById("chip-bar");
 const rowsEl = document.getElementById("rows");
-const detailTitleEl = document.getElementById("detail-title");
-const detailContentEl = document.getElementById("detail-content");
 const listTitleEl = document.getElementById("list-title");
 const datasetStatusEl = document.getElementById("dataset-status");
 const listStatsEl = document.getElementById("list-stats");
@@ -112,10 +113,7 @@ function saveObject(key, value) {
 }
 
 function getApiKey() {
-  if (state.rememberKey) {
-    return localStorage.getItem(STORAGE_KEYS.apiKey) || "";
-  }
-  return state.sessionApiKey;
+  return state.rememberKey ? localStorage.getItem(STORAGE_KEYS.apiKey) || "" : state.sessionApiKey;
 }
 
 function setApiKey(value, remember) {
@@ -141,56 +139,99 @@ function hasApiKey() {
   return Boolean(getApiKey());
 }
 
-function toggleId(collection, id) {
-  const index = collection.indexOf(id);
-  if (index >= 0) {
-    collection.splice(index, 1);
-  } else {
+function isIn(id, collection) {
+  return collection.includes(id);
+}
+
+function addTo(id, collection) {
+  if (!collection.includes(id)) {
     collection.push(id);
   }
 }
 
+function removeFrom(id, collection) {
+  return collection.filter((entry) => entry !== id);
+}
+
+function toggleExpanded(id, reveal = false) {
+  if (state.expandedIds.includes(id)) {
+    state.expandedIds = state.expandedIds.filter((entry) => entry !== id);
+  } else {
+    state.expandedIds.push(id);
+  }
+  render({ preserveScroll: true });
+  if (reveal) {
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-row-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+}
+
 function setReviewed(id, preserveScroll = true) {
-  toggleId(state.reviewedIds, id);
+  if (isIn(id, state.reviewedIds)) {
+    state.reviewedIds = removeFrom(id, state.reviewedIds);
+  } else {
+    addTo(id, state.reviewedIds);
+  }
   saveArray(STORAGE_KEYS.reviewed, state.reviewedIds);
   render({ preserveScroll });
 }
 
+function clearTriageConflicts(id) {
+  state.pursuedIds = removeFrom(id, state.pursuedIds);
+  state.holdingIds = removeFrom(id, state.holdingIds);
+  state.rejectedIds = removeFrom(id, state.rejectedIds);
+}
+
 function setPursued(id, preserveScroll = true) {
-  if (state.rejectedIds.includes(id)) {
-    state.rejectedIds = state.rejectedIds.filter((entry) => entry !== id);
-    saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+  const already = isIn(id, state.pursuedIds);
+  clearTriageConflicts(id);
+  if (!already) {
+    addTo(id, state.pursuedIds);
   }
-  toggleId(state.pursuedIds, id);
   saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  saveArray(STORAGE_KEYS.holding, state.holdingIds);
+  saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+  render({ preserveScroll });
+}
+
+function setHolding(id, preserveScroll = true) {
+  const already = isIn(id, state.holdingIds);
+  clearTriageConflicts(id);
+  if (!already) {
+    addTo(id, state.holdingIds);
+  }
+  saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  saveArray(STORAGE_KEYS.holding, state.holdingIds);
+  saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
   render({ preserveScroll });
 }
 
 function setRejected(id, preserveScroll = true) {
-  if (state.pursuedIds.includes(id)) {
-    state.pursuedIds = state.pursuedIds.filter((entry) => entry !== id);
-    saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  const already = isIn(id, state.rejectedIds);
+  clearTriageConflicts(id);
+  if (!already) {
+    addTo(id, state.rejectedIds);
   }
-  toggleId(state.rejectedIds, id);
+  saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  saveArray(STORAGE_KEYS.holding, state.holdingIds);
   saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
-  if (state.selectedItemId === id && state.rejectedIds.includes(id) && state.bucket !== "rejected") {
-    state.selectedItemId = "";
-  }
   render({ preserveScroll });
 }
 
-function restoreRejected(id) {
-  state.rejectedIds = state.rejectedIds.filter((entry) => entry !== id);
+function restoreActive(id) {
+  clearTriageConflicts(id);
+  saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  saveArray(STORAGE_KEYS.holding, state.holdingIds);
   saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
   render({ preserveScroll: true });
 }
 
 function setLoading(id, loading) {
-  const hasId = state.loadingEnrichmentIds.includes(id);
-  if (loading && !hasId) {
+  if (loading && !state.loadingEnrichmentIds.includes(id)) {
     state.loadingEnrichmentIds.push(id);
   }
-  if (!loading && hasId) {
+  if (!loading && state.loadingEnrichmentIds.includes(id)) {
     state.loadingEnrichmentIds = state.loadingEnrichmentIds.filter((entry) => entry !== id);
   }
 }
@@ -213,27 +254,6 @@ async function loadManifest() {
     throw new Error(`Failed to load manifest: ${response.status}`);
   }
   state.manifest = await response.json();
-}
-
-async function loadDataset(bucketKey) {
-  if (state.datasets[bucketKey]) {
-    return state.datasets[bucketKey];
-  }
-  const datasetMap = {
-    active: "mainCandidates",
-    pursued: "mainCandidates",
-    rejected: "mainCandidates",
-    vehicles: "consumerVehicles",
-    excluded: "excludedItems",
-  };
-  const datasetKey = datasetMap[bucketKey];
-  const response = await fetch(state.manifest.datasets[datasetKey].path);
-  if (!response.ok) {
-    throw new Error(`Failed to load dataset ${datasetKey}: ${response.status}`);
-  }
-  const rows = await response.json();
-  state.datasets[datasetKey] = rows;
-  return rows;
 }
 
 function formatCurrency(value) {
@@ -275,10 +295,7 @@ function escapeHtml(text) {
 
 function truncateText(text, maxLength = 120) {
   const value = String(text || "").trim();
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength - 1)}…`;
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
 
 function openListing(url) {
@@ -288,23 +305,8 @@ function openListing(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-function showDetailForRow(id, options = {}) {
-  const { preserveScroll = true, revealOnMobile = false } = options;
-  state.selectedItemId = id;
-  render({ preserveScroll });
-  if (revealOnMobile && window.innerWidth < 760) {
-    requestAnimationFrame(() => {
-      const detailPanel = document.querySelector(".detail-panel");
-      detailPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }
-}
-
 function settingsSummaryText() {
-  if (!hasApiKey()) {
-    return "Codex enrichment is not configured yet.";
-  }
-  return `Codex ready with ${state.model}.`;
+  return hasApiKey() ? `Codex ready with ${state.model}.` : "Codex enrichment is not configured yet.";
 }
 
 function normalizeNumber(value) {
@@ -354,8 +356,7 @@ function extractResponseText(payload) {
   if (typeof payload.output_text === "string" && payload.output_text.trim()) {
     return payload.output_text.trim();
   }
-  const strings = collectStrings(payload, []).filter((entry) => entry.trim());
-  return strings.join("\n").trim();
+  return collectStrings(payload, []).filter((entry) => entry.trim()).join("\n").trim();
 }
 
 function normalizeSource(source) {
@@ -382,20 +383,16 @@ function getAllRowsSync() {
   ];
 }
 
-function getRowById(id) {
-  return getAllRowsSync().find((row) => row.id === id) || null;
-}
-
 function getEnrichment(row) {
   return state.enrichments[row.id] || null;
 }
 
 function effectiveScore(row) {
   const enrichment = getEnrichment(row);
-  if (enrichment && typeof enrichment.updatedScore === "number") {
+  if (enrichment?.updatedScore != null) {
     return enrichment.updatedScore;
   }
-  if (enrichment && typeof enrichment.scoreAdjustment === "number" && typeof row.score === "number") {
+  if (enrichment?.scoreAdjustment != null && typeof row.score === "number") {
     return row.score + enrichment.scoreAdjustment;
   }
   return row.score;
@@ -413,16 +410,19 @@ function sourceRowsForBucket(bucket) {
 
 function inBucket(row, bucket) {
   if (bucket === "active") {
-    return !state.rejectedIds.includes(row.id) && !state.pursuedIds.includes(row.id);
+    return !isIn(row.id, state.pursuedIds) && !isIn(row.id, state.holdingIds) && !isIn(row.id, state.rejectedIds);
   }
   if (bucket === "pursued") {
-    return state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id);
+    return isIn(row.id, state.pursuedIds);
+  }
+  if (bucket === "holding") {
+    return isIn(row.id, state.holdingIds);
   }
   if (bucket === "rejected") {
-    return state.rejectedIds.includes(row.id);
+    return isIn(row.id, state.rejectedIds);
   }
   if (bucket === "vehicles") {
-    return !state.rejectedIds.includes(row.id);
+    return !isIn(row.id, state.rejectedIds);
   }
   if (bucket === "excluded") {
     return true;
@@ -438,7 +438,7 @@ function rowMatchesChips(row) {
   if (state.chips.endsSoon && !(typeof row.hoursToEnd === "number" && row.hoursToEnd <= 48)) {
     return false;
   }
-  if (state.chips.reviewed && !state.reviewedIds.includes(row.id)) {
+  if (state.chips.reviewed && !isIn(row.id, state.reviewedIds)) {
     return false;
   }
   if (state.chips.enriched && !enrichment) {
@@ -472,7 +472,7 @@ function filteredRowsForCurrentBucket() {
         enrichment?.summary,
         enrichment?.listingSignals?.join(" "),
         enrichment?.compSignals?.join(" "),
-        ...(enrichment?.possibleSources || []).map((source) => source.label || source.url).join(" "),
+        ...(enrichment?.possibleSources || []).map((source) => `${source.label} ${source.url}`).join(" "),
         ...(row.flags || []),
       ]
         .filter(Boolean)
@@ -513,12 +513,10 @@ function renderBuckets() {
     button.className = `nav-button${state.bucket === bucket.key ? " active" : ""}`;
     const count = sourceRowsForBucket(bucket.key).filter((row) => inBucket(row, bucket.key)).length;
     button.textContent = `${bucket.label} (${count})`;
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       state.bucket = bucket.key;
-      if (state.selectedItemId && !getRowById(state.selectedItemId)) {
-        state.selectedItemId = "";
-      }
-      await render({ preserveScroll: false });
+      state.expandedIds = [];
+      render({ preserveScroll: false });
       window.scrollTo({ top: 0, behavior: "instant" });
     });
     bucketNavEl.appendChild(button);
@@ -671,7 +669,7 @@ async function runBatchEnrichment(scope) {
     return;
   }
   const rows = scope === "pursued"
-    ? sortRows(getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id)))
+    ? sortRows(getAllRowsSync().filter((row) => isIn(row.id, state.pursuedIds) && !isIn(row.id, state.rejectedIds)))
     : sortRows(filteredRowsForCurrentBucket());
   if (!rows.length) {
     datasetStatusEl.textContent = "No items available for batch enrichment.";
@@ -730,153 +728,64 @@ function requestBatchStop() {
   render({ preserveScroll: true });
 }
 
-function renderRows(rows) {
-  rowsEl.replaceChildren();
-  if (!rows.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "No items match the current bucket and filters.";
-    rowsEl.appendChild(empty);
-    return;
-  }
-  rows.slice(0, 500).forEach((row) => {
-    const fragment = rowTemplate.content.cloneNode(true);
-    const card = fragment.querySelector(".row-card");
-    const main = fragment.querySelector(".row-main");
-    const title = fragment.querySelector(".row-title");
-    const subtitle = fragment.querySelector(".row-subtitle");
-    const metrics = fragment.querySelector(".row-metrics");
-    const detailsButton = fragment.querySelector(".details-button");
-    const pursueButton = fragment.querySelector(".pursue-button");
-    const rejectButton = fragment.querySelector(".reject-button");
-    const enrichButton = fragment.querySelector(".enrich-button");
-    const enrichment = getEnrichment(row);
-
-    if (state.selectedItemId === row.id) {
-      card.classList.add("selected");
-    }
-
-    title.textContent = row.title || "Untitled item";
-    subtitle.textContent = `${row.category || "Unknown"} · ${row.location || "Unknown location"}`;
-    metrics.appendChild(metricPill(formatCurrency(row.currentBid)));
-    metrics.appendChild(metricPill(formatMiles(row.distanceMiles)));
-    metrics.appendChild(metricPill(formatHours(row.hoursToEnd)));
-    metrics.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
-    if (state.reviewedIds.includes(row.id)) {
-      metrics.appendChild(metricPill("Reviewed", "positive"));
-    }
-    if (state.pursuedIds.includes(row.id)) {
-      metrics.appendChild(metricPill("Pursued", "warning"));
-    }
-    if (enrichment?.possibleSources?.length) {
-      metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comp links`, "positive"));
-    }
-
-    main.addEventListener("click", () => {
-      showDetailForRow(row.id, { preserveScroll: true, revealOnMobile: false });
-    });
-
-    detailsButton.classList.add("details");
-    detailsButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      showDetailForRow(row.id, { preserveScroll: true, revealOnMobile: true });
-    });
-
-    pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Unpursue" : "Pursue";
-    pursueButton.classList.toggle("active", state.pursuedIds.includes(row.id));
-    pursueButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      setPursued(row.id, true);
-    });
-
-    rejectButton.textContent = state.rejectedIds.includes(row.id) ? "Restore" : "Reject";
-    rejectButton.classList.add("reject");
-    rejectButton.classList.toggle("active", state.rejectedIds.includes(row.id));
-    rejectButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      if (state.rejectedIds.includes(row.id)) {
-        restoreRejected(row.id);
-      } else {
-        setRejected(row.id, true);
-      }
-    });
-
-    enrichButton.textContent = isLoading(row.id) ? "Enriching..." : enrichment ? "Re-enrich" : "Enrich";
-    enrichButton.classList.toggle("active", isLoading(row.id));
-    enrichButton.disabled = isLoading(row.id);
-    enrichButton.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      state.selectedItemId = row.id;
-      await runEnrichment(row);
-    });
-
-    rowsEl.appendChild(fragment);
-  });
+function detailSection(titleText, contentNode) {
+  const section = document.createElement("section");
+  section.className = "detail-block";
+  const title = document.createElement("h3");
+  title.textContent = titleText;
+  section.appendChild(title);
+  section.appendChild(contentNode);
+  return section;
 }
 
-function renderDetail(row) {
-  detailContentEl.replaceChildren();
-  if (!row) {
-    detailTitleEl.textContent = "Select an item";
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "Pick a row to inspect the full listing, enrichment notes, and triage actions.";
-    detailContentEl.appendChild(empty);
-    return;
-  }
-
-  detailTitleEl.textContent = truncateText(row.title, 80);
+function renderExpandedDetail(row) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "detail-grid";
   const enrichment = getEnrichment(row);
 
-  const overview = document.createElement("section");
-  overview.className = "detail-block";
-  overview.innerHTML = `
-    <h3>Overview</h3>
-    <div class="detail-pills"></div>
-  `;
-  const overviewPills = overview.querySelector(".detail-pills");
-  overviewPills.appendChild(metricPill(`Bid ${formatCurrency(row.currentBid)}`));
-  overviewPills.appendChild(metricPill(`Distance ${formatMiles(row.distanceMiles)}`));
-  overviewPills.appendChild(metricPill(`Ends ${formatHours(row.hoursToEnd)}`));
-  overviewPills.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
-  if (state.reviewedIds.includes(row.id)) {
-    overviewPills.appendChild(metricPill("Reviewed", "positive"));
-  }
-  if (state.pursuedIds.includes(row.id)) {
-    overviewPills.appendChild(metricPill("Pursued", "warning"));
-  }
-  if (state.rejectedIds.includes(row.id)) {
-    overviewPills.appendChild(metricPill("Rejected", "negative"));
-  }
-  detailContentEl.appendChild(overview);
+  const overviewContent = document.createElement("div");
+  overviewContent.className = "detail-pills";
+  overviewContent.appendChild(metricPill(`Bid ${formatCurrency(row.currentBid)}`));
+  overviewContent.appendChild(metricPill(`Distance ${formatMiles(row.distanceMiles)}`));
+  overviewContent.appendChild(metricPill(`Ends ${formatHours(row.hoursToEnd)}`));
+  overviewContent.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
+  if (isIn(row.id, state.reviewedIds)) overviewContent.appendChild(metricPill("Reviewed", "positive"));
+  if (isIn(row.id, state.pursuedIds)) overviewContent.appendChild(metricPill("Pursued", "warning"));
+  if (isIn(row.id, state.holdingIds)) overviewContent.appendChild(metricPill("Holding", "hold"));
+  if (isIn(row.id, state.rejectedIds)) overviewContent.appendChild(metricPill("Rejected", "negative"));
+  wrapper.appendChild(detailSection("Overview", overviewContent));
 
-  const actions = document.createElement("section");
-  actions.className = "detail-block";
-  actions.innerHTML = "<h3>Actions</h3>";
   const actionRow = document.createElement("div");
   actionRow.className = "inline-actions";
 
   const reviewButton = document.createElement("button");
   reviewButton.type = "button";
-  reviewButton.className = state.reviewedIds.includes(row.id) ? "primary-button" : "ghost-button";
-  reviewButton.textContent = state.reviewedIds.includes(row.id) ? "Unreview" : "Mark Reviewed";
+  reviewButton.className = isIn(row.id, state.reviewedIds) ? "primary-button" : "ghost-button";
+  reviewButton.textContent = isIn(row.id, state.reviewedIds) ? "Unreview" : "Mark Reviewed";
   reviewButton.addEventListener("click", () => setReviewed(row.id, true));
   actionRow.appendChild(reviewButton);
 
   const pursueButton = document.createElement("button");
   pursueButton.type = "button";
-  pursueButton.className = state.pursuedIds.includes(row.id) ? "primary-button" : "ghost-button";
-  pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Unpursue" : "Pursue";
+  pursueButton.className = isIn(row.id, state.pursuedIds) ? "primary-button" : "ghost-button";
+  pursueButton.textContent = isIn(row.id, state.pursuedIds) ? "Unpursue" : "Pursue";
   pursueButton.addEventListener("click", () => setPursued(row.id, true));
   actionRow.appendChild(pursueButton);
 
+  const holdButton = document.createElement("button");
+  holdButton.type = "button";
+  holdButton.className = isIn(row.id, state.holdingIds) ? "primary-button" : "ghost-button";
+  holdButton.textContent = isIn(row.id, state.holdingIds) ? "Unhold" : "Hold";
+  holdButton.addEventListener("click", () => setHolding(row.id, true));
+  actionRow.appendChild(holdButton);
+
   const rejectButton = document.createElement("button");
   rejectButton.type = "button";
-  rejectButton.className = state.rejectedIds.includes(row.id) ? "primary-button" : "ghost-button";
-  rejectButton.textContent = state.rejectedIds.includes(row.id) ? "Restore" : "Reject";
+  rejectButton.className = isIn(row.id, state.rejectedIds) ? "primary-button" : "ghost-button";
+  rejectButton.textContent = isIn(row.id, state.rejectedIds) ? "Restore" : "Reject";
   rejectButton.addEventListener("click", () => {
-    if (state.rejectedIds.includes(row.id)) {
-      restoreRejected(row.id);
+    if (isIn(row.id, state.rejectedIds)) {
+      restoreActive(row.id);
     } else {
       setRejected(row.id, true);
     }
@@ -897,37 +806,28 @@ function renderDetail(row) {
   linkButton.textContent = "Open Listing";
   linkButton.addEventListener("click", () => openListing(row.itemUrl));
   actionRow.appendChild(linkButton);
-  actions.appendChild(actionRow);
-  detailContentEl.appendChild(actions);
+  wrapper.appendChild(detailSection("Actions", actionRow));
 
-  const reasons = document.createElement("section");
-  reasons.className = "detail-block";
-  reasons.innerHTML = "<h3>Signals</h3><div class='detail-reasons'></div>";
-  const reasonContainer = reasons.querySelector(".detail-reasons");
-  (row.positiveReasons || []).slice(0, 4).forEach((reason) => reasonContainer.appendChild(metricPill(reason, "positive")));
-  (row.negativeReasons || []).slice(0, 3).forEach((reason) => reasonContainer.appendChild(metricPill(reason, "negative")));
-  detailContentEl.appendChild(reasons);
+  const signals = document.createElement("div");
+  signals.className = "detail-reasons";
+  (row.positiveReasons || []).slice(0, 4).forEach((reason) => signals.appendChild(metricPill(reason, "positive")));
+  (row.negativeReasons || []).slice(0, 3).forEach((reason) => signals.appendChild(metricPill(reason, "negative")));
+  wrapper.appendChild(detailSection("Signals", signals));
 
-  const description = document.createElement("section");
-  description.className = "detail-block";
-  description.innerHTML = `
-    <h3>Description</h3>
-    <pre>${escapeHtml(row.longDescription || "No long description in bundle.")}</pre>
-  `;
-  detailContentEl.appendChild(description);
+  const description = document.createElement("pre");
+  description.textContent = row.longDescription || "No long description in bundle.";
+  wrapper.appendChild(detailSection("Description", description));
 
-  const enrichmentBlock = document.createElement("section");
-  enrichmentBlock.className = "detail-block";
-  enrichmentBlock.innerHTML = "<h3>Codex Enrichment</h3>";
+  const enrichContent = document.createElement("div");
   if (!enrichment) {
     const note = document.createElement("p");
     note.className = "supporting-text";
     note.textContent = "No enrichment saved for this item yet.";
-    enrichmentBlock.appendChild(note);
+    enrichContent.appendChild(note);
   } else {
     const summary = document.createElement("p");
     summary.textContent = enrichment.summary || enrichment.rawText || "No summary returned.";
-    enrichmentBlock.appendChild(summary);
+    enrichContent.appendChild(summary);
 
     const pills = document.createElement("div");
     pills.className = "detail-pills";
@@ -936,16 +836,16 @@ function renderDetail(row) {
     if (enrichment.confidence) {
       pills.appendChild(metricPill(enrichment.confidence, "positive"));
     }
-    enrichmentBlock.appendChild(pills);
+    enrichContent.appendChild(pills);
 
-    const compSignals = document.createElement("ul");
+    const list = document.createElement("ul");
     const lines = [
       ...enrichment.compSignals.map((value) => `Comp: ${value}`),
       ...enrichment.riskSignals.map((value) => `Risk: ${value}`),
       ...enrichment.listingSignals.map((value) => `Listing: ${value}`),
     ];
-    compSignals.innerHTML = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("") || "<li>No structured notes.</li>";
-    enrichmentBlock.appendChild(compSignals);
+    list.innerHTML = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("") || "<li>No structured notes.</li>";
+    enrichContent.appendChild(list);
 
     if (enrichment.possibleSources.length) {
       const sourceList = document.createElement("ul");
@@ -964,14 +864,110 @@ function renderDetail(row) {
         }
         sourceList.appendChild(item);
       });
-      enrichmentBlock.appendChild(sourceList);
+      enrichContent.appendChild(sourceList);
     }
   }
-  detailContentEl.appendChild(enrichmentBlock);
+  wrapper.appendChild(detailSection("Codex Enrichment", enrichContent));
+  return wrapper;
+}
+
+function renderRows(rows) {
+  rowsEl.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No items match the current bucket and filters.";
+    rowsEl.appendChild(empty);
+    return;
+  }
+
+  rows.slice(0, 500).forEach((row) => {
+    const fragment = rowTemplate.content.cloneNode(true);
+    const card = fragment.querySelector(".row-card");
+    const main = fragment.querySelector(".row-main");
+    const title = fragment.querySelector(".row-title");
+    const subtitle = fragment.querySelector(".row-subtitle");
+    const metrics = fragment.querySelector(".row-metrics");
+    const detailsButton = fragment.querySelector(".details-button");
+    const pursueButton = fragment.querySelector(".pursue-button");
+    const holdButton = fragment.querySelector(".hold-button");
+    const rejectButton = fragment.querySelector(".reject-button");
+    const enrichButton = fragment.querySelector(".enrich-button");
+    const detail = fragment.querySelector(".row-detail");
+    const enrichment = getEnrichment(row);
+
+    card.dataset.rowId = row.id;
+    if (state.expandedIds.includes(row.id)) {
+      card.classList.add("expanded");
+      detail.replaceChildren(renderExpandedDetail(row));
+    }
+
+    title.textContent = row.title || "Untitled item";
+    subtitle.textContent = `${row.category || "Unknown"} · ${row.location || "Unknown location"}`;
+    metrics.appendChild(metricPill(formatCurrency(row.currentBid)));
+    metrics.appendChild(metricPill(formatMiles(row.distanceMiles)));
+    metrics.appendChild(metricPill(formatHours(row.hoursToEnd)));
+    metrics.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
+    if (isIn(row.id, state.reviewedIds)) metrics.appendChild(metricPill("Reviewed", "positive"));
+    if (isIn(row.id, state.pursuedIds)) metrics.appendChild(metricPill("Pursued", "warning"));
+    if (isIn(row.id, state.holdingIds)) metrics.appendChild(metricPill("Holding", "hold"));
+    if (isIn(row.id, state.rejectedIds)) metrics.appendChild(metricPill("Rejected", "negative"));
+    if (enrichment?.possibleSources?.length) metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comp links`, "positive"));
+
+    main.addEventListener("click", () => toggleExpanded(row.id, false));
+    detailsButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!state.expandedIds.includes(row.id)) {
+        toggleExpanded(row.id, true);
+      } else {
+        toggleExpanded(row.id, true);
+      }
+    });
+
+    pursueButton.textContent = isIn(row.id, state.pursuedIds) ? "Unpursue" : "Pursue";
+    pursueButton.classList.toggle("active", isIn(row.id, state.pursuedIds));
+    pursueButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setPursued(row.id, true);
+    });
+
+    holdButton.textContent = isIn(row.id, state.holdingIds) ? "Unhold" : "Hold";
+    holdButton.classList.add("hold");
+    holdButton.classList.toggle("active", isIn(row.id, state.holdingIds));
+    holdButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setHolding(row.id, true);
+    });
+
+    rejectButton.textContent = isIn(row.id, state.rejectedIds) ? "Restore" : "Reject";
+    rejectButton.classList.add("reject");
+    rejectButton.classList.toggle("active", isIn(row.id, state.rejectedIds));
+    rejectButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (isIn(row.id, state.rejectedIds)) {
+        restoreActive(row.id);
+      } else {
+        setRejected(row.id, true);
+      }
+    });
+
+    enrichButton.textContent = isLoading(row.id) ? "Enriching..." : enrichment ? "Re-enrich" : "Enrich";
+    enrichButton.classList.toggle("active", isLoading(row.id));
+    enrichButton.disabled = isLoading(row.id);
+    enrichButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!state.expandedIds.includes(row.id)) {
+        state.expandedIds.push(row.id);
+      }
+      await runEnrichment(row);
+    });
+
+    rowsEl.appendChild(fragment);
+  });
 }
 
 function buildExportText() {
-  const rows = sortRows(getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id)));
+  const rows = sortRows(getAllRowsSync().filter((row) => isIn(row.id, state.pursuedIds) && !isIn(row.id, state.rejectedIds)));
   const lines = [
     "GovDeals Helper Pursued Export",
     `Generated: ${new Date().toISOString()}`,
@@ -1057,7 +1053,6 @@ async function render(options = {}) {
   if (!state.manifest) {
     return;
   }
-
   renderBuckets();
   renderChips();
 
@@ -1070,19 +1065,10 @@ async function render(options = {}) {
   batchStatusEl.textContent = batchStatusText();
 
   const rows = sortRows(filteredRowsForCurrentBucket());
-  if (!state.selectedItemId && rows.length) {
-    state.selectedItemId = rows[0].id;
-  }
-  if (state.selectedItemId && !getRowById(state.selectedItemId)) {
-    state.selectedItemId = "";
-  }
-
   listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
   datasetStatusEl.textContent = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}`;
-  listStatsEl.textContent = `${rows.length} visible | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Rejected ${state.rejectedIds.length}`;
-
+  listStatsEl.textContent = `${rows.length} visible | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Holding ${state.holdingIds.length} | Rejected ${state.rejectedIds.length}`;
   renderRows(rows);
-  renderDetail(getRowById(state.selectedItemId));
 
   if (preserveScroll) {
     requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "instant" }));
@@ -1093,12 +1079,11 @@ async function initialize() {
   try {
     await loadManifest();
     const datasetMeta = state.manifest.datasets;
-    const loads = [
+    const [mainCandidates, consumerVehicles, excludedItems] = await Promise.all([
       fetch(datasetMeta.mainCandidates.path).then((response) => response.json()),
       fetch(datasetMeta.consumerVehicles.path).then((response) => response.json()),
       fetch(datasetMeta.excludedItems.path).then((response) => response.json()),
-    ];
-    const [mainCandidates, consumerVehicles, excludedItems] = await Promise.all(loads);
+    ]);
     state.datasets.mainCandidates = mainCandidates;
     state.datasets.consumerVehicles = consumerVehicles;
     state.datasets.excludedItems = excludedItems;

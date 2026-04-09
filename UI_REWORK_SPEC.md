@@ -64,7 +64,7 @@ Open detail by tapping the row body, but still keep an explicit `Details` contro
 
 ## Detail Pattern
 
-The detail surface owns deeper inspection and lower-frequency actions.
+The expanded row surface owns deeper inspection and lower-frequency actions.
 
 It should show:
 
@@ -76,8 +76,8 @@ It should show:
 - refresh item action
 - restore / reject / pursue controls
 
-On phones, detail can be a full-screen sheet or drill-in panel.
-On larger screens, it should become a true split-pane detail view.
+Primary behavior should be inline expansion from the row itself.
+Secondary drill-in or sheet behavior can exist later if needed, but the default interaction should feel attached to the list item.
 
 ## Triage State Model
 
@@ -87,6 +87,7 @@ Minimum states:
 
 - `active`
 - `pursued`
+- `holding`
 - `rejected`
 
 Supporting flags:
@@ -147,8 +148,9 @@ This rework should deliver:
 - bucket-based primary navigation
 - dense triage rows
 - filter chips
+- holding bucket and hold/unhold workflow
 - rejected bucket and restore flow
-- detail pane/sheet with enrichment and comp links
+- inline expanding detail with enrichment and comp links
 - row-local state updates without snap-to-top behavior
 
 It does not need to deliver full refresh or native Android background services yet.
