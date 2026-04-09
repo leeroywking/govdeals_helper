@@ -12,6 +12,7 @@ At minimum, keep these current:
 - [LOCAL_QUERY_APP.md](/home/ein/projects/govdeals/LOCAL_QUERY_APP.md)
 - [FIRST_LAYER_SCORING_SPEC.md](/home/ein/projects/govdeals/FIRST_LAYER_SCORING_SPEC.md)
 - [ANDROID_APP_ROADMAP.md](/home/ein/projects/govdeals/ANDROID_APP_ROADMAP.md)
+- [UI_REWORK_SPEC.md](/home/ein/projects/govdeals/UI_REWORK_SPEC.md)
 
 If a new reusable endpoint or analysis workflow is added, document:
 

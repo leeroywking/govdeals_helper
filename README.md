@@ -20,6 +20,7 @@ The intended workflow is:
 - [LOCAL_QUERY_APP.md](/home/ein/projects/govdeals/LOCAL_QUERY_APP.md): local Postgres/query server and analysis endpoints
 - [FIRST_LAYER_SCORING_SPEC.md](/home/ein/projects/govdeals/FIRST_LAYER_SCORING_SPEC.md): first-layer scoring rules and intent
 - [ANDROID_APP_ROADMAP.md](/home/ein/projects/govdeals/ANDROID_APP_ROADMAP.md): Android delivery plan and current milestone
+- [UI_REWORK_SPEC.md](/home/ein/projects/govdeals/UI_REWORK_SPEC.md): target mobile interaction model and layout structure
 
 ## Usage
 
@@ -71,15 +72,18 @@ The repository now includes a simple local-first Android review client under `mo
 
 Current app features:
 
-- separate views for main candidates, consumer vehicles, and excluded items
+- bucket-based triage views for active, pursued, rejected, vehicles, and excluded items
+- dense inbox-style rows instead of large per-item cards
+- persistent detail panel / inspection surface
 - direct GovDeals link-out per item
 - local reviewed/unreviewed state stored on-device
 - separate pursued/not-pursued state stored on-device
+- rejected/restore workflow stored on-device
 - plain-text export of pursued items for transfer back to a computer
 - per-item Codex enrichment with local API-key configuration
 - batch enrichment for the current filtered set or the pursued set
-- search and sorting inside the app
-- item detail sheet with score reasons and flags
+- search, sorting, and filter chips inside the app
+- item detail panel with score reasons, enrichment notes, and comp links
 
 The app reads app-ready JSON files from `mobile/www/data/`.
 

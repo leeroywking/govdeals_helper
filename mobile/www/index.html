@@ -12,14 +12,13 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="title-block">
           <p class="eyebrow">GovDeals Helper</p>
           <h1>Road Preview Build</h1>
+          <p class="subtitle">Inbox-style triage for current candidates, vehicles, rejected items, and Codex enrichment.</p>
         </div>
         <div class="topbar-actions">
-          <button id="pursued-filter" class="ghost-button" type="button">All Results</button>
-          <button id="reviewed-filter" class="ghost-button" type="button">All Review State</button>
-          <button id="batch-visible-button" class="ghost-button" type="button">Enrich Filtered</button>
+          <button id="batch-visible-button" class="ghost-button" type="button">Enrich Visible</button>
           <button id="batch-pursued-button" class="ghost-button" type="button">Enrich Pursued</button>
           <button id="batch-stop-button" class="ghost-button" type="button">Stop Batch</button>
           <button id="export-button" class="ghost-button" type="button">Export Pursued</button>
@@ -28,18 +27,19 @@
       </header>
 
       <section class="controls">
-        <input id="search-input" type="search" placeholder="Search title, category, state, brand..." />
+        <input id="search-input" type="search" placeholder="Search title, category, state, brand, comp note..." />
         <select id="sort-select">
           <option value="score">Sort: Score</option>
+          <option value="enrichedScore">Sort: Enriched Score</option>
           <option value="endingSoon">Sort: Ending Soon</option>
           <option value="distance">Sort: Distance</option>
           <option value="bid">Sort: Current Bid</option>
           <option value="title">Sort: Title</option>
-          <option value="enrichedScore">Sort: Enriched Score</option>
         </select>
       </section>
 
-      <nav class="tabs" id="tabs"></nav>
+      <nav class="bucket-nav" id="bucket-nav"></nav>
+      <section class="chip-bar" id="chip-bar"></section>
 
       <section class="status-panel">
         <div id="dataset-status">Loading app bundle...</div>
@@ -47,18 +47,29 @@
         <div id="batch-status"></div>
       </section>
 
-      <main id="cards" class="cards"></main>
+      <main class="workspace">
+        <section class="list-panel">
+          <div class="list-header">
+            <div>
+              <p class="eyebrow">Queue</p>
+              <h2 id="list-title">Active</h2>
+            </div>
+          </div>
+          <div id="rows" class="rows"></div>
+        </section>
+
+        <aside class="detail-panel">
+          <div class="detail-header">
+            <p class="eyebrow">Detail</p>
+            <h2 id="detail-title">Select an item</h2>
+          </div>
+          <div id="detail-content" class="detail-content"></div>
+        </aside>
+      </main>
     </div>
 
-    <dialog id="detail-dialog" class="detail-dialog">
-      <form method="dialog" class="detail-sheet">
-        <button class="close-button" value="cancel" type="submit">Close</button>
-        <div id="detail-content"></div>
-      </form>
-    </dialog>
-
-    <dialog id="settings-dialog" class="detail-dialog">
-      <form method="dialog" class="detail-sheet settings-sheet">
+    <dialog id="settings-dialog" class="sheet-dialog">
+      <form method="dialog" class="sheet">
         <button class="close-button" value="cancel" type="submit">Close</button>
         <div class="dialog-header">
           <p class="eyebrow">Codex Settings</p>
@@ -80,15 +91,15 @@
           <input id="model-input" type="text" value="gpt-5-mini" />
         </label>
         <div class="inline-actions">
-          <button id="save-settings-button" class="details-button" type="button">Save Settings</button>
+          <button id="save-settings-button" class="primary-button" type="button">Save Settings</button>
           <button id="clear-settings-button" class="ghost-button" type="button">Clear Key</button>
         </div>
         <div id="settings-status" class="supporting-text"></div>
       </form>
     </dialog>
 
-    <dialog id="export-dialog" class="detail-dialog">
-      <form method="dialog" class="detail-sheet settings-sheet">
+    <dialog id="export-dialog" class="sheet-dialog">
+      <form method="dialog" class="sheet">
         <button class="close-button" value="cancel" type="submit">Close</button>
         <div class="dialog-header">
           <p class="eyebrow">Export</p>
@@ -97,31 +108,26 @@
         </div>
         <textarea id="export-text" class="export-text" spellcheck="false"></textarea>
         <div class="inline-actions">
-          <button id="copy-export-button" class="details-button" type="button">Copy Text</button>
+          <button id="copy-export-button" class="primary-button" type="button">Copy Text</button>
           <button id="download-export-button" class="ghost-button" type="button">Download .txt</button>
         </div>
         <div id="export-status" class="supporting-text"></div>
       </form>
     </dialog>
 
-    <template id="card-template">
-      <article class="card">
-        <div class="card-top">
-          <div>
-            <p class="category"></p>
-            <h2 class="title"></h2>
+    <template id="row-template">
+      <article class="row-card">
+        <button class="row-main" type="button">
+          <div class="row-title-block">
+            <p class="row-title"></p>
+            <p class="row-subtitle"></p>
           </div>
-          <div class="card-top-actions">
-            <button class="pursue-toggle" type="button"></button>
-            <button class="review-toggle" type="button"></button>
-          </div>
-        </div>
-        <div class="metrics"></div>
-        <div class="reasons"></div>
-        <div class="actions">
-          <button class="details-button" type="button">Details</button>
-          <button class="enrich-button ghost-button" type="button">Enrich</button>
-          <a class="link-button" target="_blank" rel="noreferrer">Open Listing</a>
+          <div class="row-metrics"></div>
+        </button>
+        <div class="row-actions">
+          <button class="mini-button pursue-button" type="button"></button>
+          <button class="mini-button reject-button" type="button"></button>
+          <button class="mini-button enrich-button" type="button"></button>
         </div>
       </article>
     </template>

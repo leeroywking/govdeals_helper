@@ -1,22 +1,46 @@
 const STORAGE_KEYS = {
   reviewed: "govdeals-reviewed-ids",
   pursued: "govdeals-pursued-ids",
+  rejected: "govdeals-rejected-ids",
   enrichments: "govdeals-enrichments",
   apiKey: "govdeals-openai-api-key",
   rememberKey: "govdeals-openai-remember-key",
   model: "govdeals-openai-model",
 };
 
+const BUCKETS = [
+  { key: "active", label: "Active" },
+  { key: "pursued", label: "Pursued" },
+  { key: "rejected", label: "Rejected" },
+  { key: "vehicles", label: "Vehicles" },
+  { key: "excluded", label: "Excluded" },
+];
+
+const CHIPS = [
+  { key: "nearby", label: "Nearby" },
+  { key: "endsSoon", label: "Ends Soon" },
+  { key: "reviewed", label: "Reviewed" },
+  { key: "enriched", label: "Enriched" },
+  { key: "hasCompLinks", label: "Has Comp Links" },
+];
+
 const state = {
   manifest: null,
   datasets: {},
-  activeTab: "mainCandidates",
-  reviewedOnly: false,
-  pursuedOnly: false,
+  bucket: "active",
+  selectedItemId: "",
   search: "",
   sort: "score",
+  chips: {
+    nearby: false,
+    endsSoon: false,
+    reviewed: false,
+    enriched: false,
+    hasCompLinks: false,
+  },
   reviewedIds: loadArray(STORAGE_KEYS.reviewed),
   pursuedIds: loadArray(STORAGE_KEYS.pursued),
+  rejectedIds: loadArray(STORAGE_KEYS.rejected),
   enrichments: loadObject(STORAGE_KEYS.enrichments),
   rememberKey: localStorage.getItem(STORAGE_KEYS.rememberKey) === "true",
   model: localStorage.getItem(STORAGE_KEYS.model) || "gpt-5-mini",
@@ -33,28 +57,22 @@ const state = {
   },
 };
 
-const tabs = [
-  { key: "mainCandidates", label: "Main Candidates" },
-  { key: "consumerVehicles", label: "Vehicles" },
-  { key: "excludedItems", label: "Excluded" },
-];
-
-const cardsEl = document.getElementById("cards");
-const tabsEl = document.getElementById("tabs");
+const bucketNavEl = document.getElementById("bucket-nav");
+const chipBarEl = document.getElementById("chip-bar");
+const rowsEl = document.getElementById("rows");
+const detailTitleEl = document.getElementById("detail-title");
+const detailContentEl = document.getElementById("detail-content");
+const listTitleEl = document.getElementById("list-title");
 const datasetStatusEl = document.getElementById("dataset-status");
 const listStatsEl = document.getElementById("list-stats");
 const batchStatusEl = document.getElementById("batch-status");
 const searchInputEl = document.getElementById("search-input");
 const sortSelectEl = document.getElementById("sort-select");
-const reviewedFilterEl = document.getElementById("reviewed-filter");
-const pursuedFilterEl = document.getElementById("pursued-filter");
 const batchVisibleButtonEl = document.getElementById("batch-visible-button");
 const batchPursuedButtonEl = document.getElementById("batch-pursued-button");
 const batchStopButtonEl = document.getElementById("batch-stop-button");
 const exportButtonEl = document.getElementById("export-button");
 const settingsButtonEl = document.getElementById("settings-button");
-const detailDialogEl = document.getElementById("detail-dialog");
-const detailContentEl = document.getElementById("detail-content");
 const settingsDialogEl = document.getElementById("settings-dialog");
 const exportDialogEl = document.getElementById("export-dialog");
 const exportTextEl = document.getElementById("export-text");
@@ -67,7 +85,7 @@ const saveSettingsButtonEl = document.getElementById("save-settings-button");
 const clearSettingsButtonEl = document.getElementById("clear-settings-button");
 const copyExportButtonEl = document.getElementById("copy-export-button");
 const downloadExportButtonEl = document.getElementById("download-export-button");
-const cardTemplate = document.getElementById("card-template");
+const rowTemplate = document.getElementById("row-template");
 
 function loadArray(key) {
   try {
@@ -114,9 +132,9 @@ function setApiKey(value, remember) {
 
 function clearApiKey() {
   state.sessionApiKey = "";
+  state.rememberKey = false;
   localStorage.removeItem(STORAGE_KEYS.apiKey);
   localStorage.removeItem(STORAGE_KEYS.rememberKey);
-  state.rememberKey = false;
 }
 
 function hasApiKey() {
@@ -132,16 +150,39 @@ function toggleId(collection, id) {
   }
 }
 
-function toggleReviewed(id) {
+function setReviewed(id, preserveScroll = true) {
   toggleId(state.reviewedIds, id);
   saveArray(STORAGE_KEYS.reviewed, state.reviewedIds);
-  render();
+  render({ preserveScroll });
 }
 
-function togglePursued(id) {
+function setPursued(id, preserveScroll = true) {
+  if (state.rejectedIds.includes(id)) {
+    state.rejectedIds = state.rejectedIds.filter((entry) => entry !== id);
+    saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+  }
   toggleId(state.pursuedIds, id);
   saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
-  render();
+  render({ preserveScroll });
+}
+
+function setRejected(id, preserveScroll = true) {
+  if (state.pursuedIds.includes(id)) {
+    state.pursuedIds = state.pursuedIds.filter((entry) => entry !== id);
+    saveArray(STORAGE_KEYS.pursued, state.pursuedIds);
+  }
+  toggleId(state.rejectedIds, id);
+  saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+  if (state.selectedItemId === id && state.rejectedIds.includes(id) && state.bucket !== "rejected") {
+    state.selectedItemId = "";
+  }
+  render({ preserveScroll });
+}
+
+function restoreRejected(id) {
+  state.rejectedIds = state.rejectedIds.filter((entry) => entry !== id);
+  saveArray(STORAGE_KEYS.rejected, state.rejectedIds);
+  render({ preserveScroll: true });
 }
 
 function setLoading(id, loading) {
@@ -152,7 +193,6 @@ function setLoading(id, loading) {
   if (!loading && hasId) {
     state.loadingEnrichmentIds = state.loadingEnrichmentIds.filter((entry) => entry !== id);
   }
-  render();
 }
 
 function isLoading(id) {
@@ -161,7 +201,7 @@ function isLoading(id) {
 
 function batchStatusText() {
   if (!state.batchRun.running) {
-    return "Batch enrichment can process many items, but only while the app remains open in the foreground.";
+    return "Batch enrichment can process many items, but only while the app stays open in the foreground.";
   }
   const current = state.batchRun.currentTitle ? ` | Current: ${state.batchRun.currentTitle}` : "";
   return `Batch ${state.batchRun.scope}: ${state.batchRun.completed}/${state.batchRun.total} complete, ${state.batchRun.failed} failed${state.batchRun.stopRequested ? " | stopping after current item" : ""}${current}`;
@@ -175,17 +215,24 @@ async function loadManifest() {
   state.manifest = await response.json();
 }
 
-async function loadDataset(tabKey) {
-  if (state.datasets[tabKey]) {
-    return state.datasets[tabKey];
+async function loadDataset(bucketKey) {
+  if (state.datasets[bucketKey]) {
+    return state.datasets[bucketKey];
   }
-  const datasetMeta = state.manifest.datasets[tabKey];
-  const response = await fetch(datasetMeta.path);
+  const datasetMap = {
+    active: "mainCandidates",
+    pursued: "mainCandidates",
+    rejected: "mainCandidates",
+    vehicles: "consumerVehicles",
+    excluded: "excludedItems",
+  };
+  const datasetKey = datasetMap[bucketKey];
+  const response = await fetch(state.manifest.datasets[datasetKey].path);
   if (!response.ok) {
-    throw new Error(`Failed to load dataset ${tabKey}: ${response.status}`);
+    throw new Error(`Failed to load dataset ${datasetKey}: ${response.status}`);
   }
   const rows = await response.json();
-  state.datasets[tabKey] = rows;
+  state.datasets[datasetKey] = rows;
   return rows;
 }
 
@@ -315,6 +362,18 @@ function normalizeSource(source) {
   return null;
 }
 
+function getAllRowsSync() {
+  return [
+    ...(state.datasets.mainCandidates || []),
+    ...(state.datasets.consumerVehicles || []),
+    ...(state.datasets.excludedItems || []),
+  ];
+}
+
+function getRowById(id) {
+  return getAllRowsSync().find((row) => row.id === id) || null;
+}
+
 function getEnrichment(row) {
   return state.enrichments[row.id] || null;
 }
@@ -328,6 +387,87 @@ function effectiveScore(row) {
     return row.score + enrichment.scoreAdjustment;
   }
   return row.score;
+}
+
+function sourceRowsForBucket(bucket) {
+  if (bucket === "vehicles") {
+    return state.datasets.consumerVehicles || [];
+  }
+  if (bucket === "excluded") {
+    return state.datasets.excludedItems || [];
+  }
+  return state.datasets.mainCandidates || [];
+}
+
+function inBucket(row, bucket) {
+  if (bucket === "active") {
+    return !state.rejectedIds.includes(row.id) && !state.pursuedIds.includes(row.id);
+  }
+  if (bucket === "pursued") {
+    return state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id);
+  }
+  if (bucket === "rejected") {
+    return state.rejectedIds.includes(row.id);
+  }
+  if (bucket === "vehicles") {
+    return !state.rejectedIds.includes(row.id);
+  }
+  if (bucket === "excluded") {
+    return true;
+  }
+  return true;
+}
+
+function rowMatchesChips(row) {
+  const enrichment = getEnrichment(row);
+  if (state.chips.nearby && !(typeof row.distanceMiles === "number" && row.distanceMiles <= 100)) {
+    return false;
+  }
+  if (state.chips.endsSoon && !(typeof row.hoursToEnd === "number" && row.hoursToEnd <= 48)) {
+    return false;
+  }
+  if (state.chips.reviewed && !state.reviewedIds.includes(row.id)) {
+    return false;
+  }
+  if (state.chips.enriched && !enrichment) {
+    return false;
+  }
+  if (state.chips.hasCompLinks && !(enrichment && enrichment.possibleSources.length)) {
+    return false;
+  }
+  return true;
+}
+
+function filteredRowsForCurrentBucket() {
+  const term = state.search.trim().toLowerCase();
+  return sourceRowsForBucket(state.bucket)
+    .filter((row) => inBucket(row, state.bucket))
+    .filter((row) => rowMatchesChips(row))
+    .filter((row) => {
+      if (!term) {
+        return true;
+      }
+      const enrichment = getEnrichment(row);
+      const haystack = [
+        row.title,
+        row.category,
+        row.state,
+        row.brand,
+        row.model,
+        row.company,
+        row.location,
+        row.longDescription,
+        enrichment?.summary,
+        enrichment?.listingSignals?.join(" "),
+        enrichment?.compSignals?.join(" "),
+        ...(enrichment?.possibleSources || []).map((source) => source.label || source.url).join(" "),
+        ...(row.flags || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(term);
+    });
 }
 
 function sortRows(rows) {
@@ -353,72 +493,44 @@ function sortRows(rows) {
   return sorted;
 }
 
-function filterRows(rows) {
-  const term = state.search.trim().toLowerCase();
-  return rows.filter((row) => {
-    if (state.reviewedOnly && !state.reviewedIds.includes(row.id)) {
-      return false;
-    }
-    if (state.pursuedOnly && !state.pursuedIds.includes(row.id)) {
-      return false;
-    }
-    if (!term) {
-      return true;
-    }
-    const enrichment = getEnrichment(row);
-    const haystack = [
-      row.title,
-      row.category,
-      row.state,
-      row.brand,
-      row.model,
-      row.company,
-      row.location,
-      row.longDescription,
-      enrichment?.summary,
-      enrichment?.listingSignals?.join(" "),
-      enrichment?.compSignals?.join(" "),
-      ...(enrichment?.possibleSources || []).map((source) => source.label || source.url).join(" "),
-      ...(row.flags || []),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(term);
-  });
-}
-
-function currentFilteredRows() {
-  const rows = state.datasets[state.activeTab] || [];
-  return sortRows(filterRows(rows));
-}
-
-function renderTabs() {
-  tabsEl.replaceChildren();
-  tabs.forEach((tab) => {
+function renderBuckets() {
+  bucketNavEl.replaceChildren();
+  BUCKETS.forEach((bucket) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `tab-button${state.activeTab === tab.key ? " active" : ""}`;
-    const count = state.manifest?.counts?.[tab.key] ?? 0;
-    button.textContent = `${tab.label} (${count})`;
+    button.className = `nav-button${state.bucket === bucket.key ? " active" : ""}`;
+    const count = sourceRowsForBucket(bucket.key).filter((row) => inBucket(row, bucket.key)).length;
+    button.textContent = `${bucket.label} (${count})`;
     button.addEventListener("click", async () => {
-      state.activeTab = tab.key;
-      await render();
+      state.bucket = bucket.key;
+      if (state.selectedItemId && !getRowById(state.selectedItemId)) {
+        state.selectedItemId = "";
+      }
+      await render({ preserveScroll: false });
+      window.scrollTo({ top: 0, behavior: "instant" });
     });
-    tabsEl.appendChild(button);
+    bucketNavEl.appendChild(button);
   });
 }
 
-function metricPill(text) {
-  const el = document.createElement("span");
-  el.className = "pill";
-  el.textContent = text;
-  return el;
+function renderChips() {
+  chipBarEl.replaceChildren();
+  CHIPS.forEach((chip) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `chip-button${state.chips[chip.key] ? " active" : ""}`;
+    button.textContent = chip.label;
+    button.addEventListener("click", () => {
+      state.chips[chip.key] = !state.chips[chip.key];
+      render({ preserveScroll: true });
+    });
+    chipBarEl.appendChild(button);
+  });
 }
 
-function reasonPill(text, kind) {
+function metricPill(text, kind = "") {
   const el = document.createElement("span");
-  el.className = `pill ${kind}`;
+  el.className = `pill${kind ? ` ${kind}` : ""}`;
   el.textContent = text;
   return el;
 }
@@ -426,36 +538,26 @@ function reasonPill(text, kind) {
 function sanitizeEnrichment(raw, row) {
   const scoreAdjustment = normalizeNumber(raw.scoreAdjustment);
   const updatedScore = normalizeNumber(raw.updatedScore);
-  const resaleLow = normalizeNumber(raw.estimatedResaleLow);
-  const resaleHigh = normalizeNumber(raw.estimatedResaleHigh);
-  const profitLow = normalizeNumber(raw.estimatedProfitLow);
-  const profitHigh = normalizeNumber(raw.estimatedProfitHigh);
-
   return {
     enrichedAt: new Date().toISOString(),
     summary: String(raw.summary || "").trim(),
     listingSignals: Array.isArray(raw.listingSignals) ? raw.listingSignals.map(String) : [],
     compSignals: Array.isArray(raw.compSignals) ? raw.compSignals.map(String) : [],
     riskSignals: Array.isArray(raw.riskSignals) ? raw.riskSignals.map(String) : [],
-    possibleSources: Array.isArray(raw.possibleSources)
-      ? raw.possibleSources.map(normalizeSource).filter(Boolean)
-      : [],
+    possibleSources: Array.isArray(raw.possibleSources) ? raw.possibleSources.map(normalizeSource).filter(Boolean) : [],
     confidence: String(raw.confidence || "").trim(),
     recommendation: String(raw.recommendation || "").trim(),
     scoreAdjustment,
-    updatedScore: updatedScore ?? (typeof scoreAdjustment === "number" && typeof row.score === "number"
-      ? row.score + scoreAdjustment
-      : null),
-    estimatedResaleLow: resaleLow,
-    estimatedResaleHigh: resaleHigh,
-    estimatedProfitLow: profitLow,
-    estimatedProfitHigh: profitHigh,
+    updatedScore: updatedScore ?? (typeof row.score === "number" && typeof scoreAdjustment === "number" ? row.score + scoreAdjustment : null),
+    estimatedResaleLow: normalizeNumber(raw.estimatedResaleLow),
+    estimatedResaleHigh: normalizeNumber(raw.estimatedResaleHigh),
+    estimatedProfitLow: normalizeNumber(raw.estimatedProfitLow),
+    estimatedProfitHigh: normalizeNumber(raw.estimatedProfitHigh),
     rawText: String(raw.rawText || "").trim(),
   };
 }
 
 function buildEnrichmentPrompt(row) {
-  const existing = getEnrichment(row);
   return `
 You are helping evaluate a GovDeals listing for resale profit and ease of flip.
 
@@ -468,10 +570,9 @@ Rules:
 - include direct links to comparable sales or supporting pages whenever possible
 - scoreAdjustment should be between -30 and 30
 - updatedScore should be the revised total score for this item
-- estimate profit using current bid only, not taxes or transport fine-tuning
+- estimate profit using current bid only
 - use web search for comps when useful
 - if exact comps are weak, say so and lower confidence
-- rawText should be a concise plain-English note for the human reviewer
 - do not include markdown fences
 
 Listing data:
@@ -482,7 +583,6 @@ ${JSON.stringify(
       company: row.company,
       location: row.location,
       state: row.state,
-      zip: row.zip,
       currentBid: row.currentBid,
       bidCount: row.bidCount,
       distanceMiles: row.distanceMiles,
@@ -493,7 +593,7 @@ ${JSON.stringify(
       flags: row.flags,
       itemUrl: row.itemUrl,
       longDescription: row.longDescription,
-      previousEnrichment: existing || null,
+      previousEnrichment: getEnrichment(row) || null,
     },
     null,
     2,
@@ -502,17 +602,17 @@ ${JSON.stringify(
 }
 
 async function runEnrichment(row) {
-  return runEnrichmentInternal(row, { rerenderAfter: true, showInlineError: true });
+  return runEnrichmentInternal(row, { rerenderAfter: true, showError: true });
 }
 
 async function runEnrichmentInternal(row, options = {}) {
-  const { rerenderAfter = true, showInlineError = true } = options;
+  const { rerenderAfter = true, showError = true } = options;
   if (!hasApiKey()) {
     openSettingsDialog("Enter an OpenAI API key before running Codex enrichment.");
     return false;
   }
-
   setLoading(row.id, true);
+  await render({ preserveScroll: true });
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -526,36 +626,26 @@ async function runEnrichmentInternal(row, options = {}) {
         input: buildEnrichmentPrompt(row),
       }),
     });
-
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload?.error?.message || `OpenAI request failed with ${response.status}`);
     }
-
     const responseText = extractResponseText(payload);
     const parsed = parseJsonFromText(responseText);
     parsed.rawText = parsed.rawText || responseText;
     state.enrichments[row.id] = sanitizeEnrichment(parsed, row);
     saveObject(STORAGE_KEYS.enrichments, state.enrichments);
-    if (rerenderAfter) {
-      await render();
-    }
-    if (rerenderAfter && detailDialogEl.open) {
-      renderDetail(row);
-    }
     return true;
   } catch (error) {
-    if (showInlineError && detailDialogEl.open) {
-      const errorBlock = document.createElement("section");
-      errorBlock.className = "detail-block";
-      errorBlock.innerHTML = `<h3>Enrichment Error</h3><p>${escapeHtml(String(error))}</p>`;
-      detailContentEl.prepend(errorBlock);
-    } else if (showInlineError) {
+    if (showError) {
       datasetStatusEl.textContent = `Enrichment failed: ${String(error)}`;
     }
     return false;
   } finally {
     setLoading(row.id, false);
+    if (rerenderAfter) {
+      await render({ preserveScroll: true });
+    }
   }
 }
 
@@ -568,25 +658,16 @@ async function runBatchEnrichment(scope) {
     openSettingsDialog("Enter an OpenAI API key before running batch enrichment.");
     return;
   }
-
-  const sourceRows = scope === "pursued"
-    ? getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id))
-    : currentFilteredRows();
-  const rows = sortRows(sourceRows);
+  const rows = scope === "pursued"
+    ? sortRows(getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id)))
+    : sortRows(filteredRowsForCurrentBucket());
   if (!rows.length) {
-    datasetStatusEl.textContent = scope === "pursued"
-      ? "No pursued items available for batch enrichment."
-      : "No filtered items available for batch enrichment.";
+    datasetStatusEl.textContent = "No items available for batch enrichment.";
     return;
   }
-
-  const confirmed = window.confirm(
-    `Start batch enrichment for ${rows.length} ${scope === "pursued" ? "pursued" : "filtered"} items? This keeps running only while the app stays open in the foreground.`,
-  );
-  if (!confirmed) {
+  if (!window.confirm(`Start batch enrichment for ${rows.length} items? Keep the app open while it runs.`)) {
     return;
   }
-
   state.batchRun = {
     running: true,
     scope,
@@ -596,25 +677,23 @@ async function runBatchEnrichment(scope) {
     currentTitle: "",
     stopRequested: false,
   };
-  await render();
-
+  await render({ preserveScroll: true });
   for (const row of rows) {
     if (state.batchRun.stopRequested) {
       break;
     }
-    state.batchRun.currentTitle = truncateText(row.title, 80);
-    await render();
-    const ok = await runEnrichmentInternal(row, { rerenderAfter: false, showInlineError: false });
+    state.batchRun.currentTitle = truncateText(row.title, 72);
+    await render({ preserveScroll: true });
+    const ok = await runEnrichmentInternal(row, { rerenderAfter: false, showError: false });
     state.batchRun.completed += 1;
     if (!ok) {
       state.batchRun.failed += 1;
     }
-    await render();
+    await render({ preserveScroll: true });
   }
-
-  const stopped = state.batchRun.stopRequested;
-  const completed = state.batchRun.completed;
+  const finished = state.batchRun.completed;
   const failed = state.batchRun.failed;
+  const stopped = state.batchRun.stopRequested;
   state.batchRun = {
     running: false,
     scope: "",
@@ -625,9 +704,9 @@ async function runBatchEnrichment(scope) {
     stopRequested: false,
   };
   datasetStatusEl.textContent = stopped
-    ? `Batch enrichment stopped after ${completed} items with ${failed} failures.`
-    : `Batch enrichment finished: ${completed} items processed with ${failed} failures.`;
-  await render();
+    ? `Batch enrichment stopped after ${finished} items with ${failed} failures.`
+    : `Batch enrichment finished: ${finished} items processed with ${failed} failures.`;
+  await render({ preserveScroll: true });
 }
 
 function requestBatchStop() {
@@ -636,159 +715,122 @@ function requestBatchStop() {
     return;
   }
   state.batchRun.stopRequested = true;
-  render();
+  render({ preserveScroll: true });
 }
 
-function renderEnrichmentBlock(row) {
-  const enrichment = getEnrichment(row);
-  const section = document.createElement("section");
-  section.className = "detail-block";
-  const buttonLabel = hasApiKey() ? (isLoading(row.id) ? "Enriching..." : "Run Codex Enrichment") : "Configure Codex";
-  section.innerHTML = `
-    <div class="enrichment-header">
-      <h3>Codex Enrichment</h3>
-      <span class="supporting-text">${escapeHtml(settingsSummaryText())}</span>
-    </div>
-  `;
+function renderRows(rows) {
+  rowsEl.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No items match the current bucket and filters.";
+    rowsEl.appendChild(empty);
+    return;
+  }
+  rows.slice(0, 500).forEach((row) => {
+    const fragment = rowTemplate.content.cloneNode(true);
+    const card = fragment.querySelector(".row-card");
+    const main = fragment.querySelector(".row-main");
+    const title = fragment.querySelector(".row-title");
+    const subtitle = fragment.querySelector(".row-subtitle");
+    const metrics = fragment.querySelector(".row-metrics");
+    const pursueButton = fragment.querySelector(".pursue-button");
+    const rejectButton = fragment.querySelector(".reject-button");
+    const enrichButton = fragment.querySelector(".enrich-button");
+    const enrichment = getEnrichment(row);
 
-  const actionButton = document.createElement("button");
-  actionButton.type = "button";
-  actionButton.className = `enrich-button${isLoading(row.id) ? " loading" : ""}`;
-  actionButton.textContent = buttonLabel;
-  actionButton.disabled = isLoading(row.id);
-  actionButton.addEventListener("click", () => {
-    if (!hasApiKey()) {
-      openSettingsDialog("Enter an OpenAI API key before running Codex enrichment.");
-      return;
+    if (state.selectedItemId === row.id) {
+      card.classList.add("selected");
     }
-    runEnrichment(row);
-  });
-  section.appendChild(actionButton);
 
-  if (!enrichment) {
-    const note = document.createElement("p");
-    note.className = "supporting-text";
-    note.textContent = "No enrichment saved for this item yet.";
-    section.appendChild(note);
-    return section;
-  }
+    title.textContent = row.title || "Untitled item";
+    subtitle.textContent = `${row.category || "Unknown"} · ${row.location || "Unknown location"}`;
+    metrics.appendChild(metricPill(formatCurrency(row.currentBid)));
+    metrics.appendChild(metricPill(formatMiles(row.distanceMiles)));
+    metrics.appendChild(metricPill(formatHours(row.hoursToEnd)));
+    metrics.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
+    if (state.reviewedIds.includes(row.id)) {
+      metrics.appendChild(metricPill("Reviewed", "positive"));
+    }
+    if (state.pursuedIds.includes(row.id)) {
+      metrics.appendChild(metricPill("Pursued", "warning"));
+    }
+    if (enrichment?.possibleSources?.length) {
+      metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comp links`, "positive"));
+    }
 
-  const summary = document.createElement("p");
-  summary.textContent = enrichment.summary || enrichment.rawText || "No summary returned.";
-  section.appendChild(summary);
-
-  const metrics = document.createElement("div");
-  metrics.className = "metrics";
-  metrics.appendChild(metricPill(`Updated Score ${enrichment.updatedScore ?? "N/A"}`));
-  metrics.appendChild(metricPill(`Profit ${formatCurrency(enrichment.estimatedProfitLow)} to ${formatCurrency(enrichment.estimatedProfitHigh)}`));
-  metrics.appendChild(metricPill(`Resale ${formatCurrency(enrichment.estimatedResaleLow)} to ${formatCurrency(enrichment.estimatedResaleHigh)}`));
-  if (enrichment.confidence) {
-    metrics.appendChild(metricPill(`Confidence ${enrichment.confidence}`));
-  }
-  section.appendChild(metrics);
-
-  const reasons = document.createElement("div");
-  reasons.className = "enrichment-reasons";
-  enrichment.compSignals.slice(0, 3).forEach((reason) => reasons.appendChild(reasonPill(reason, "positive")));
-  enrichment.riskSignals.slice(0, 2).forEach((reason) => reasons.appendChild(reasonPill(reason, "negative")));
-  section.appendChild(reasons);
-
-  const list = document.createElement("ul");
-  const items = [
-    ...enrichment.listingSignals.map((value) => `Listing: ${value}`),
-  ];
-  if (!items.length && enrichment.recommendation) {
-    items.push(`Recommendation: ${enrichment.recommendation}`);
-  }
-  list.innerHTML = items.map((value) => `<li>${escapeHtml(value)}</li>`).join("") || "<li>No structured details returned.</li>";
-  section.appendChild(list);
-
-  if (enrichment.possibleSources.length) {
-    const sourcesBlock = document.createElement("div");
-    sourcesBlock.className = "detail-block";
-    sourcesBlock.innerHTML = "<h3>Comp Links</h3>";
-    const sourceList = document.createElement("ul");
-    enrichment.possibleSources.forEach((source) => {
-      const item = document.createElement("li");
-      if (source.url) {
-        const link = document.createElement("a");
-        link.href = source.url;
-        link.textContent = source.label || source.url;
-        link.target = "_blank";
-        link.rel = "noreferrer";
-        item.appendChild(link);
-      } else {
-        item.textContent = source.label;
-      }
-      sourceList.appendChild(item);
+    main.addEventListener("click", () => {
+      state.selectedItemId = row.id;
+      render({ preserveScroll: true });
     });
-    sourcesBlock.appendChild(sourceList);
-    section.appendChild(sourcesBlock);
-  }
 
-  return section;
+    pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Unpursue" : "Pursue";
+    pursueButton.classList.toggle("active", state.pursuedIds.includes(row.id));
+    pursueButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setPursued(row.id, true);
+    });
+
+    rejectButton.textContent = state.rejectedIds.includes(row.id) ? "Restore" : "Reject";
+    rejectButton.classList.add("reject");
+    rejectButton.classList.toggle("active", state.rejectedIds.includes(row.id));
+    rejectButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (state.rejectedIds.includes(row.id)) {
+        restoreRejected(row.id);
+      } else {
+        setRejected(row.id, true);
+      }
+    });
+
+    enrichButton.textContent = isLoading(row.id) ? "Enriching..." : enrichment ? "Re-enrich" : "Enrich";
+    enrichButton.classList.toggle("active", isLoading(row.id));
+    enrichButton.disabled = isLoading(row.id);
+    enrichButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      state.selectedItemId = row.id;
+      await runEnrichment(row);
+    });
+
+    rowsEl.appendChild(fragment);
+  });
 }
 
 function renderDetail(row) {
   detailContentEl.replaceChildren();
-  const wrapper = document.createElement("div");
-  wrapper.className = "detail-grid";
+  if (!row) {
+    detailTitleEl.textContent = "Select an item";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Pick a row to inspect the full listing, enrichment notes, and triage actions.";
+    detailContentEl.appendChild(empty);
+    return;
+  }
+
+  detailTitleEl.textContent = truncateText(row.title, 80);
+  const enrichment = getEnrichment(row);
 
   const overview = document.createElement("section");
   overview.className = "detail-block";
   overview.innerHTML = `
     <h3>Overview</h3>
-    <p><strong>${escapeHtml(row.title)}</strong></p>
-    <p>${escapeHtml(row.category || "Unknown category")}</p>
-    <p>${escapeHtml(row.location || "Unknown location")}</p>
-    <p>Bid ${escapeHtml(formatCurrency(row.currentBid))} | Score ${escapeHtml(String(row.score ?? "N/A"))} | Effective ${escapeHtml(String(effectiveScore(row) ?? "N/A"))}</p>
+    <div class="detail-pills"></div>
   `;
-  wrapper.appendChild(overview);
-
-  const logistics = document.createElement("section");
-  logistics.className = "detail-block";
-  logistics.innerHTML = `
-    <h3>Logistics</h3>
-    <p>Distance: ${escapeHtml(formatMiles(row.distanceMiles))}</p>
-    <p>Weight: ${escapeHtml(typeof row.weightLbs === "number" ? `${Math.round(row.weightLbs)} lb` : "Unknown")}</p>
-    <p>Ends: ${escapeHtml(row.auctionEndDisplay || row.auctionEndUtc || "Unknown")}</p>
-    <p>Bid count: ${escapeHtml(String(row.bidCount ?? "Unknown"))}</p>
-  `;
-  wrapper.appendChild(logistics);
-
-  const positive = document.createElement("section");
-  positive.className = "detail-block";
-  positive.innerHTML = `<h3>Positive Reasons</h3><ul>${(row.positiveReasons || [])
-    .map((reason) => `<li>${escapeHtml(reason)}</li>`)
-    .join("") || "<li>None</li>"}</ul>`;
-  wrapper.appendChild(positive);
-
-  const negative = document.createElement("section");
-  negative.className = "detail-block";
-  negative.innerHTML = `<h3>Negative Reasons</h3><ul>${(row.negativeReasons || [])
-    .map((reason) => `<li>${escapeHtml(reason)}</li>`)
-    .join("") || "<li>None</li>"}</ul>`;
-  wrapper.appendChild(negative);
-
-  const description = document.createElement("section");
-  description.className = "detail-block";
-  description.innerHTML = `
-    <h3>Listing Description</h3>
-    <pre>${escapeHtml(row.longDescription || "No long description in bundle.")}</pre>
-  `;
-  wrapper.appendChild(description);
-
-  const meta = document.createElement("section");
-  meta.className = "detail-block";
-  meta.innerHTML = `
-    <h3>Metadata</h3>
-    <p>Brand/Model: ${escapeHtml([row.brand, row.model, row.modelYear].filter(Boolean).join(" ") || "Unknown")}</p>
-    <p>Flags: ${escapeHtml((row.flags || []).join(", ") || "None")}</p>
-    <p>Exclusion reason: ${escapeHtml(row.exclusionReason || "N/A")}</p>
-  `;
-  wrapper.appendChild(meta);
-
-  wrapper.appendChild(renderEnrichmentBlock(row));
+  const overviewPills = overview.querySelector(".detail-pills");
+  overviewPills.appendChild(metricPill(`Bid ${formatCurrency(row.currentBid)}`));
+  overviewPills.appendChild(metricPill(`Distance ${formatMiles(row.distanceMiles)}`));
+  overviewPills.appendChild(metricPill(`Ends ${formatHours(row.hoursToEnd)}`));
+  overviewPills.appendChild(metricPill(`Score ${effectiveScore(row) ?? "N/A"}`));
+  if (state.reviewedIds.includes(row.id)) {
+    overviewPills.appendChild(metricPill("Reviewed", "positive"));
+  }
+  if (state.pursuedIds.includes(row.id)) {
+    overviewPills.appendChild(metricPill("Pursued", "warning"));
+  }
+  if (state.rejectedIds.includes(row.id)) {
+    overviewPills.appendChild(metricPill("Rejected", "negative"));
+  }
+  detailContentEl.appendChild(overview);
 
   const actions = document.createElement("section");
   actions.className = "detail-block";
@@ -796,146 +838,138 @@ function renderDetail(row) {
   const actionRow = document.createElement("div");
   actionRow.className = "inline-actions";
 
-  const pursueButton = document.createElement("button");
-  pursueButton.type = "button";
-  pursueButton.className = state.pursuedIds.includes(row.id) ? "pursue-toggle pursued" : "pursue-toggle";
-  pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Pursued" : "Pursue";
-  pursueButton.addEventListener("click", () => {
-    togglePursued(row.id);
-    renderDetail(row);
-  });
-  actionRow.appendChild(pursueButton);
-
   const reviewButton = document.createElement("button");
   reviewButton.type = "button";
-  reviewButton.className = state.reviewedIds.includes(row.id) ? "review-toggle reviewed" : "review-toggle";
-  reviewButton.textContent = state.reviewedIds.includes(row.id) ? "Reviewed" : "Mark Reviewed";
-  reviewButton.addEventListener("click", () => {
-    toggleReviewed(row.id);
-    renderDetail(row);
-  });
+  reviewButton.className = state.reviewedIds.includes(row.id) ? "primary-button" : "ghost-button";
+  reviewButton.textContent = state.reviewedIds.includes(row.id) ? "Unreview" : "Mark Reviewed";
+  reviewButton.addEventListener("click", () => setReviewed(row.id, true));
   actionRow.appendChild(reviewButton);
 
-  const openButton = document.createElement("button");
-  openButton.type = "button";
-  openButton.className = "details-button";
-  openButton.textContent = "Open GovDeals Listing";
-  openButton.addEventListener("click", () => openListing(row.itemUrl));
-  actionRow.appendChild(openButton);
-  actions.appendChild(actionRow);
-  wrapper.appendChild(actions);
+  const pursueButton = document.createElement("button");
+  pursueButton.type = "button";
+  pursueButton.className = state.pursuedIds.includes(row.id) ? "primary-button" : "ghost-button";
+  pursueButton.textContent = state.pursuedIds.includes(row.id) ? "Unpursue" : "Pursue";
+  pursueButton.addEventListener("click", () => setPursued(row.id, true));
+  actionRow.appendChild(pursueButton);
 
-  detailContentEl.appendChild(wrapper);
-  detailDialogEl.showModal();
-}
-
-function renderCards(rows) {
-  cardsEl.replaceChildren();
-  if (!rows.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "No items match the current search and filter state.";
-    cardsEl.appendChild(empty);
-    return;
-  }
-
-  rows.slice(0, 500).forEach((row) => {
-    const fragment = cardTemplate.content.cloneNode(true);
-    const category = fragment.querySelector(".category");
-    const title = fragment.querySelector(".title");
-    const pursueToggle = fragment.querySelector(".pursue-toggle");
-    const reviewToggle = fragment.querySelector(".review-toggle");
-    const metrics = fragment.querySelector(".metrics");
-    const reasons = fragment.querySelector(".reasons");
-    const detailsButton = fragment.querySelector(".details-button");
-    const enrichButton = fragment.querySelector(".enrich-button");
-    const linkButton = fragment.querySelector(".link-button");
-
-    category.textContent = row.category || "Uncategorized";
-    title.textContent = row.title || "Untitled item";
-
-    const pursued = state.pursuedIds.includes(row.id);
-    pursueToggle.className = `pursue-toggle${pursued ? " pursued" : ""}`;
-    pursueToggle.textContent = pursued ? "Pursued" : "Pursue";
-    pursueToggle.addEventListener("click", () => togglePursued(row.id));
-
-    const reviewed = state.reviewedIds.includes(row.id);
-    reviewToggle.className = `review-toggle${reviewed ? " reviewed" : ""}`;
-    reviewToggle.textContent = reviewed ? "Reviewed" : "Review";
-    reviewToggle.addEventListener("click", () => toggleReviewed(row.id));
-
-    const enrichment = getEnrichment(row);
-    [
-      `Score ${row.score ?? "N/A"}`,
-      `Bid ${formatCurrency(row.currentBid)}`,
-      `Distance ${formatMiles(row.distanceMiles)}`,
-      `Ends ${formatHours(row.hoursToEnd)}`,
-    ].forEach((text) => metrics.appendChild(metricPill(text)));
-    if (enrichment) {
-      metrics.appendChild(metricPill(`Codex ${effectiveScore(row) ?? "N/A"}`));
-      if (typeof enrichment.estimatedProfitHigh === "number") {
-        metrics.appendChild(metricPill(`Profit ${formatCurrency(enrichment.estimatedProfitHigh)}`));
-      }
-      if (enrichment.possibleSources.length) {
-        metrics.appendChild(metricPill(`${enrichment.possibleSources.length} comps`));
-      }
-    }
-
-    (row.positiveReasons || []).slice(0, 2).forEach((reason) => {
-      reasons.appendChild(reasonPill(reason, "positive"));
-    });
-    if (enrichment?.summary) {
-      reasons.appendChild(reasonPill(truncateText(enrichment.summary), "positive"));
+  const rejectButton = document.createElement("button");
+  rejectButton.type = "button";
+  rejectButton.className = state.rejectedIds.includes(row.id) ? "primary-button" : "ghost-button";
+  rejectButton.textContent = state.rejectedIds.includes(row.id) ? "Restore" : "Reject";
+  rejectButton.addEventListener("click", () => {
+    if (state.rejectedIds.includes(row.id)) {
+      restoreRejected(row.id);
     } else {
-      (row.negativeReasons || []).slice(0, 1).forEach((reason) => {
-        reasons.appendChild(reasonPill(reason, "negative"));
-      });
+      setRejected(row.id, true);
     }
-
-    detailsButton.addEventListener("click", () => renderDetail(row));
-    enrichButton.className = `enrich-button ghost-button${isLoading(row.id) ? " loading" : ""}`;
-    enrichButton.textContent = isLoading(row.id) ? "Enriching..." : enrichment ? "Re-enrich" : "Enrich";
-    enrichButton.disabled = isLoading(row.id);
-    enrichButton.addEventListener("click", () => runEnrichment(row));
-    linkButton.href = row.itemUrl || "#";
-    linkButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      openListing(row.itemUrl);
-    });
-
-    cardsEl.appendChild(fragment);
   });
-}
+  actionRow.appendChild(rejectButton);
 
-function getAllRowsSync() {
-  return Object.values(state.datasets).flat();
+  const enrichButton = document.createElement("button");
+  enrichButton.type = "button";
+  enrichButton.className = isLoading(row.id) ? "primary-button" : "ghost-button";
+  enrichButton.textContent = isLoading(row.id) ? "Enriching..." : "Run Enrichment";
+  enrichButton.disabled = isLoading(row.id);
+  enrichButton.addEventListener("click", () => runEnrichment(row));
+  actionRow.appendChild(enrichButton);
+
+  const linkButton = document.createElement("button");
+  linkButton.type = "button";
+  linkButton.className = "ghost-button";
+  linkButton.textContent = "Open Listing";
+  linkButton.addEventListener("click", () => openListing(row.itemUrl));
+  actionRow.appendChild(linkButton);
+  actions.appendChild(actionRow);
+  detailContentEl.appendChild(actions);
+
+  const reasons = document.createElement("section");
+  reasons.className = "detail-block";
+  reasons.innerHTML = "<h3>Signals</h3><div class='detail-reasons'></div>";
+  const reasonContainer = reasons.querySelector(".detail-reasons");
+  (row.positiveReasons || []).slice(0, 4).forEach((reason) => reasonContainer.appendChild(metricPill(reason, "positive")));
+  (row.negativeReasons || []).slice(0, 3).forEach((reason) => reasonContainer.appendChild(metricPill(reason, "negative")));
+  detailContentEl.appendChild(reasons);
+
+  const description = document.createElement("section");
+  description.className = "detail-block";
+  description.innerHTML = `
+    <h3>Description</h3>
+    <pre>${escapeHtml(row.longDescription || "No long description in bundle.")}</pre>
+  `;
+  detailContentEl.appendChild(description);
+
+  const enrichmentBlock = document.createElement("section");
+  enrichmentBlock.className = "detail-block";
+  enrichmentBlock.innerHTML = "<h3>Codex Enrichment</h3>";
+  if (!enrichment) {
+    const note = document.createElement("p");
+    note.className = "supporting-text";
+    note.textContent = "No enrichment saved for this item yet.";
+    enrichmentBlock.appendChild(note);
+  } else {
+    const summary = document.createElement("p");
+    summary.textContent = enrichment.summary || enrichment.rawText || "No summary returned.";
+    enrichmentBlock.appendChild(summary);
+
+    const pills = document.createElement("div");
+    pills.className = "detail-pills";
+    pills.appendChild(metricPill(`Updated ${enrichment.updatedScore ?? "N/A"}`));
+    pills.appendChild(metricPill(`Profit ${formatCurrency(enrichment.estimatedProfitLow)} to ${formatCurrency(enrichment.estimatedProfitHigh)}`));
+    if (enrichment.confidence) {
+      pills.appendChild(metricPill(enrichment.confidence, "positive"));
+    }
+    enrichmentBlock.appendChild(pills);
+
+    const compSignals = document.createElement("ul");
+    const lines = [
+      ...enrichment.compSignals.map((value) => `Comp: ${value}`),
+      ...enrichment.riskSignals.map((value) => `Risk: ${value}`),
+      ...enrichment.listingSignals.map((value) => `Listing: ${value}`),
+    ];
+    compSignals.innerHTML = lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("") || "<li>No structured notes.</li>";
+    enrichmentBlock.appendChild(compSignals);
+
+    if (enrichment.possibleSources.length) {
+      const sourceList = document.createElement("ul");
+      enrichment.possibleSources.forEach((source) => {
+        const item = document.createElement("li");
+        if (source.url) {
+          const link = document.createElement("a");
+          link.className = "source-link";
+          link.href = source.url;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.textContent = source.label || source.url;
+          item.appendChild(link);
+        } else {
+          item.textContent = source.label;
+        }
+        sourceList.appendChild(item);
+      });
+      enrichmentBlock.appendChild(sourceList);
+    }
+  }
+  detailContentEl.appendChild(enrichmentBlock);
 }
 
 function buildExportText() {
-  const allRows = getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id));
-  const sorted = sortRows(allRows);
-  const lines = [];
-  lines.push("GovDeals Helper Pursued Export");
-  lines.push(`Generated: ${new Date().toISOString()}`);
-  lines.push(`Count: ${sorted.length}`);
-  lines.push("");
-  sorted.forEach((row, index) => {
+  const rows = sortRows(getAllRowsSync().filter((row) => state.pursuedIds.includes(row.id) && !state.rejectedIds.includes(row.id)));
+  const lines = [
+    "GovDeals Helper Pursued Export",
+    `Generated: ${new Date().toISOString()}`,
+    `Count: ${rows.length}`,
+    "",
+  ];
+  rows.forEach((row, index) => {
     const enrichment = getEnrichment(row);
     lines.push(`${index + 1}. ${row.title}`);
-    lines.push(`Bucket: ${row.bucket}`);
     lines.push(`URL: ${row.itemUrl || "N/A"}`);
-    lines.push(`Bid: ${formatCurrency(row.currentBid)} | Base score: ${row.score ?? "N/A"} | Effective score: ${effectiveScore(row) ?? "N/A"}`);
+    lines.push(`Bid: ${formatCurrency(row.currentBid)} | Effective score: ${effectiveScore(row) ?? "N/A"}`);
     lines.push(`Location: ${row.location || "Unknown"} | Distance: ${formatMiles(row.distanceMiles)}`);
-    lines.push(`Category: ${row.category || "Unknown"} | Brand/Model: ${[row.brand, row.model, row.modelYear].filter(Boolean).join(" ") || "Unknown"}`);
     if (enrichment) {
-      lines.push(`Codex summary: ${enrichment.summary || enrichment.rawText || "N/A"}`);
-      lines.push(`Profit estimate: ${formatCurrency(enrichment.estimatedProfitLow)} to ${formatCurrency(enrichment.estimatedProfitHigh)}`);
-      lines.push(`Comp signals: ${(enrichment.compSignals || []).join("; ") || "None"}`);
-      lines.push(`Risk signals: ${(enrichment.riskSignals || []).join("; ") || "None"}`);
+      lines.push(`Summary: ${enrichment.summary || enrichment.rawText || "N/A"}`);
       lines.push(`Comp links: ${(enrichment.possibleSources || []).map((source) => `${source.label}${source.url ? ` (${source.url})` : ""}`).join("; ") || "None"}`);
     }
-    lines.push(`Positive reasons: ${(row.positiveReasons || []).join("; ") || "None"}`);
-    lines.push(`Negative reasons: ${(row.negativeReasons || []).join("; ") || "None"}`);
     lines.push("");
   });
   return lines.join("\n");
@@ -944,7 +978,7 @@ function buildExportText() {
 function openExportDialog() {
   exportTextEl.value = buildExportText();
   exportStatusEl.textContent = state.pursuedIds.length
-    ? `${state.pursuedIds.length} pursued items included.`
+    ? `${state.pursuedIds.filter((id) => !state.rejectedIds.includes(id)).length} pursued items included.`
     : "No pursued items selected yet.";
   exportDialogEl.showModal();
 }
@@ -981,12 +1015,11 @@ function saveSettings() {
   const apiKey = apiKeyInputEl.value.trim();
   const remember = rememberKeyCheckboxEl.checked;
   const model = modelInputEl.value.trim() || "gpt-5-mini";
-
   setApiKey(apiKey, remember);
   state.model = model;
   localStorage.setItem(STORAGE_KEYS.model, model);
   settingsStatusEl.textContent = apiKey ? `Saved. Using ${model}.` : "No API key saved.";
-  render();
+  render({ preserveScroll: true });
 }
 
 function clearSettings() {
@@ -997,20 +1030,20 @@ function clearSettings() {
   rememberKeyCheckboxEl.checked = false;
   modelInputEl.value = state.model;
   settingsStatusEl.textContent = "Cleared stored API key.";
-  render();
+  render({ preserveScroll: true });
 }
 
-async function render() {
+async function render(options = {}) {
+  const { preserveScroll = false } = options;
+  const scrollY = preserveScroll ? window.scrollY : 0;
   if (!state.manifest) {
     return;
   }
-  renderTabs();
 
-  reviewedFilterEl.textContent = state.reviewedOnly ? "Reviewed Only" : "All Review State";
-  reviewedFilterEl.classList.toggle("active", state.reviewedOnly);
-  pursuedFilterEl.textContent = state.pursuedOnly ? "Pursued Only" : "All Results";
-  pursuedFilterEl.classList.toggle("active", state.pursuedOnly);
-  batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "filtered");
+  renderBuckets();
+  renderChips();
+
+  batchVisibleButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "visible");
   batchPursuedButtonEl.classList.toggle("busy", state.batchRun.running && state.batchRun.scope === "pursued");
   batchStopButtonEl.classList.toggle("busy", state.batchRun.running);
   batchVisibleButtonEl.disabled = state.batchRun.running;
@@ -1018,39 +1051,49 @@ async function render() {
   batchStopButtonEl.disabled = !state.batchRun.running;
   batchStatusEl.textContent = batchStatusText();
 
-  const rows = await loadDataset(state.activeTab);
-  const filtered = sortRows(filterRows(rows));
-  const reviewedCount = rows.filter((row) => state.reviewedIds.includes(row.id)).length;
-  const pursuedCount = rows.filter((row) => state.pursuedIds.includes(row.id)).length;
-  const enrichedCount = rows.filter((row) => Boolean(getEnrichment(row))).length;
-  const tabLabel = tabs.find((tab) => tab.key === state.activeTab)?.label || state.activeTab;
+  const rows = sortRows(filteredRowsForCurrentBucket());
+  if (!state.selectedItemId && rows.length) {
+    state.selectedItemId = rows[0].id;
+  }
+  if (state.selectedItemId && !getRowById(state.selectedItemId)) {
+    state.selectedItemId = "";
+  }
+
+  listTitleEl.textContent = BUCKETS.find((bucket) => bucket.key === state.bucket)?.label || "Queue";
   datasetStatusEl.textContent = `Bundle generated ${state.manifest.generatedAt} | ${settingsSummaryText()}`;
-  listStatsEl.textContent = `${tabLabel}: ${filtered.length} shown of ${rows.length} | Reviewed ${reviewedCount} | Pursued ${pursuedCount} | Enriched ${enrichedCount}`;
-  renderCards(filtered);
+  listStatsEl.textContent = `${rows.length} visible | Reviewed ${state.reviewedIds.length} | Pursued ${state.pursuedIds.length} | Rejected ${state.rejectedIds.length}`;
+
+  renderRows(rows);
+  renderDetail(getRowById(state.selectedItemId));
+
+  if (preserveScroll) {
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: "instant" }));
+  }
 }
 
 async function initialize() {
   try {
     await loadManifest();
-    await Promise.all(tabs.map((tab) => loadDataset(tab.key)));
-    renderTabs();
-    searchInputEl.addEventListener("input", async (event) => {
-      state.search = event.target.value;
-      await render();
+    const datasetMeta = state.manifest.datasets;
+    const loads = [
+      fetch(datasetMeta.mainCandidates.path).then((response) => response.json()),
+      fetch(datasetMeta.consumerVehicles.path).then((response) => response.json()),
+      fetch(datasetMeta.excludedItems.path).then((response) => response.json()),
+    ];
+    const [mainCandidates, consumerVehicles, excludedItems] = await Promise.all(loads);
+    state.datasets.mainCandidates = mainCandidates;
+    state.datasets.consumerVehicles = consumerVehicles;
+    state.datasets.excludedItems = excludedItems;
+
+    searchInputEl.addEventListener("input", () => {
+      state.search = searchInputEl.value;
+      render({ preserveScroll: false });
     });
-    sortSelectEl.addEventListener("change", async (event) => {
-      state.sort = event.target.value;
-      await render();
+    sortSelectEl.addEventListener("change", () => {
+      state.sort = sortSelectEl.value;
+      render({ preserveScroll: true });
     });
-    reviewedFilterEl.addEventListener("click", async () => {
-      state.reviewedOnly = !state.reviewedOnly;
-      await render();
-    });
-    pursuedFilterEl.addEventListener("click", async () => {
-      state.pursuedOnly = !state.pursuedOnly;
-      await render();
-    });
-    batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("filtered"));
+    batchVisibleButtonEl.addEventListener("click", () => runBatchEnrichment("visible"));
     batchPursuedButtonEl.addEventListener("click", () => runBatchEnrichment("pursued"));
     batchStopButtonEl.addEventListener("click", requestBatchStop);
     exportButtonEl.addEventListener("click", openExportDialog);
@@ -1059,6 +1102,7 @@ async function initialize() {
     clearSettingsButtonEl.addEventListener("click", clearSettings);
     copyExportButtonEl.addEventListener("click", copyExportText);
     downloadExportButtonEl.addEventListener("click", downloadExportText);
+
     await render();
   } catch (error) {
     datasetStatusEl.textContent = "Failed to load app bundle.";

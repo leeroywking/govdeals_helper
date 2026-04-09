@@ -49,6 +49,8 @@ Success condition:
 
 Current implementation status:
 
+- inbox-style bucketed triage UI is implemented
+- dense rows plus persistent detail panel have replaced the earlier card-heavy layout
 - app shell is implemented under `mobile/`
 - app-ready JSON bundle export is implemented
 - reviewed state is stored locally on-device via `localStorage`
