@@ -115,10 +115,18 @@ Add a repeatable refresh path:
 - rerun first-layer filter
 - generate app-ready data bundle
 - rebuild APK
+- support item-level refresh from the detail view so opening `Details` can update the current bid, description, and other listing fields in place
+- support a full listing refresh that merges new source data into the existing app state instead of replacing local triage state
+- preserve reviewed, pursued, rejected, and holding-area status across refreshes using stable item identity keys
+- tag newly appeared listings as `new` after a full refresh
+- allow filtering and sorting based on `new` status after refresh
+- update in-place listings already under review or consideration when their bid, description, or related listing metadata changes
+- eventually surface removed / ended listings distinctly so the user can tell whether an item disappeared versus being manually rejected
 
 Eventually:
 
 - app can import a new data file without needing a full code rebuild
+- app can perform these refreshes without requiring a full APK rebuild
 
 ## Phase 4: Richer Scoring Inputs
 
